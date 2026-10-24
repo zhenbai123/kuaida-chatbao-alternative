@@ -40,15 +40,21 @@ namespace QuickReplyLite
                     Wait(delegate { return session.IsAttached && IsPlaced(main, handle); });
                     Check(checkbox.Checked && session.Target == handle, "checkbox attaches the actual external window and positions beside it");
                     Check(WindowsWindowDockingHost.VisibleBounds(main.Handle).Left == WindowsWindowDockingHost.VisibleBounds(handle).Right, "the Windows follower touches the target's right visible edge with zero gap");
+                    Rectangle initialTarget = WindowsWindowDockingHost.VisibleBounds(handle), initialFollower = WindowsWindowDockingHost.VisibleBounds(main.Handle);
+                    Check(initialFollower.Top == initialTarget.Top && initialFollower.Bottom == initialTarget.Bottom, "docked Windows frames have matching top and bottom edges");
 
                     Rectangle area = Screen.FromHandle(handle).WorkingArea;
                     SetForegroundWindow(handle); Wait(delegate { return Native.GetForegroundWindow() == handle; });
                     Move(handle, area.Left + 70, area.Top + 55, 500, 550);
                     Wait(delegate { return IsPlaced(main, handle); });
                     Check(Native.GetForegroundWindow() == handle, "following a moved target does not steal keyboard focus");
+                    Move(handle, area.Left + 70, area.Top + 55, 500, 300);
+                    Wait(delegate { return IsPlaced(main, handle); });
+                    Check(WindowsWindowDockingHost.VisibleBounds(main.Handle).Height == WindowsWindowDockingHost.VisibleBounds(handle).Height, "shrinking the target also shrinks the follower to the same visible height");
                     Move(handle, area.Right - 510, area.Top + 65, 500, 540);
                     Wait(delegate { return IsPlaced(main, handle); });
-                    Check(WindowsWindowDockingHost.VisibleBounds(main.Handle).Right == WindowsWindowDockingHost.VisibleBounds(handle).Left, "the Windows follower touches the target's left visible edge with zero gap when the right side has no room");
+                    Check(WindowsWindowDockingHost.VisibleBounds(main.Handle).Left == WindowsWindowDockingHost.VisibleBounds(handle).Right, "near the screen's right edge the follower remains attached on the right instead of switching sides");
+                    Check(WindowsWindowDockingHost.VisibleBounds(main.Handle).Right > area.Right, "an off-screen portion is allowed so the right-hand attachment cannot drift or flip");
 
                     ShowWindow(handle, 6); Wait(delegate { return !main.Visible && session.HiddenByTarget; });
                     Check(session.IsAttached && checkbox.Checked, "minimizing the real target hides quick replies without losing attachment");
@@ -66,7 +72,7 @@ namespace QuickReplyLite
                     other.CloseMainWindow(); Wait(delegate { return other.HasExited; }); other.Dispose(); other = null;
 
                     ShowWindow(handle, 3); Wait(delegate { return IsPlaced(main, handle); });
-                    Check(area.Contains(WindowsWindowDockingHost.VisibleBounds(main.Handle)), "maximizing the target keeps quick replies within the screen working area");
+                    Check(WindowsWindowDockingHost.VisibleBounds(main.Handle).Left == WindowsWindowDockingHost.VisibleBounds(handle).Right, "maximizing the target retains its right-hand attachment without overlaying the chat");
                     ShowWindow(handle, 9); Move(handle, area.Left + 30, area.Top + 35, 500, 560); Wait(delegate { return IsPlaced(main, handle); });
                     // A genuine on-screen demonstration of the two separate windows.
                     if (args.Length > 0)
@@ -132,7 +138,7 @@ namespace QuickReplyLite
             DockingTarget snapshot; WindowsWindowDockingHost host = new WindowsWindowDockingHost(main);
             if (!host.TryGetTarget(target, out snapshot) || snapshot.Minimized) return false;
             Rectangle current = host.FollowerBounds;
-            return current == DockingLayout.Place(snapshot.Bounds, current.Size, snapshot.WorkingArea, 0);
+            return current == DockingLayout.Place(snapshot.Bounds, current.Width);
         }
     }
 }

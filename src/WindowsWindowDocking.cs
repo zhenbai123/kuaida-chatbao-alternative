@@ -42,8 +42,8 @@ namespace QuickReplyLite
             string kind = name.ToString();
             if (kind == "WorkerW" || kind == "Progman" || kind == "Shell_TrayWnd" || kind == "Shell_SecondaryTrayWnd") return false;
             int cloaked; bool hidden = GetCloaked(window, 14, out cloaked, sizeof(int)) == 0 && cloaked != 0;
-            Rectangle bounds = VisibleBounds(window), area = Screen.FromHandle(window).WorkingArea;
-            target = new DockingTarget { ProcessId = Native.ProcessId(window), Visible = IsWindowVisible(window) && !hidden, Minimized = IsIconic(window), Bounds = bounds, WorkingArea = area };
+            Rectangle bounds = VisibleBounds(window);
+            target = new DockingTarget { ProcessId = Native.ProcessId(window), Visible = IsWindowVisible(window) && !hidden, Minimized = IsIconic(window), Bounds = bounds };
             return Native.IsWindow(window);
         }
 

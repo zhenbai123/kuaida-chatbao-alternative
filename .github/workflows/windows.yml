@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       publish_release:
-        description: 'Publish v1.7.1 release after all checks pass'
+        description: 'Publish v1.7.2 release after all checks pass'
         type: boolean
         default: false
       update_screenshots:
@@ -79,19 +79,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $notes = @'
-          快答-聊天宝替代开源app v1.7.1
+          快答-聊天宝替代开源app v1.7.2
 
           Windows 10 / 11 64 位本地话术悬浮窗，MIT 开源、免激活、无需账号。完整解压后双击 QuickReplyLite.exe；需要 .NET Framework 4.8。
 
-          新增「吸附当前窗口」：先点击聊天窗口，再勾选吸附；快答无间距紧贴窗口边缘，跟随窗口移动、最小化和恢复，目标关闭后自动解除。空间不足时自动贴左侧或屏幕内侧，吸附期间发送目标固定为绑定窗口。
+          新增「吸附当前窗口」：先点击聊天窗口，再勾选吸附；快答无间距紧贴窗口边缘，跟随窗口移动、最小化和恢复，目标关闭后自动解除。始终固定在目标窗口外侧右边，上下对齐且高度一致，不会自动换到左侧或屏幕内侧。右侧空间不足时超出部分会移出屏幕，请将聊天窗口往左移；吸附期间发送目标固定为绑定窗口。
 
           保留箭头一键发送、双击仅粘贴、悬浮置顶、板块分类、关键词底色、图片文件预览、拖动排序、批量替换、话术导入导出、桌面快捷方式与开机启动。
 
-          附件 Kuaida-v1.7.1-Windows-x64.zip 是可直接使用的 Windows 软件；Source code 是源码。升级请保留整个 Data 文件夹。不同聊天软件的发送与附件行为请先在测试会话确认。
+          附件 Kuaida-v1.7.2-Windows-x64.zip 是可直接使用的 Windows 软件；Source code 是源码。升级请保留整个 Data 文件夹。不同聊天软件的发送与附件行为请先在测试会话确认。
           '@
           $notes | Set-Content artifacts/release-notes.md -Encoding utf8
-          gh release view v1.7.1 --repo $env:GITHUB_REPOSITORY *> $null
-          if ($LASTEXITCODE -eq 0) { throw 'Release v1.7.1 already exists; refusing to replace a published release.' }
+          gh release view v1.7.2 --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) { throw 'Release v1.7.2 already exists; refusing to replace a published release.' }
           $target = git rev-parse HEAD
-          gh release create v1.7.1 artifacts/Kuaida-v1.7.1-Windows-x64.zip artifacts/SHA256SUMS.txt --repo $env:GITHUB_REPOSITORY --target $target --title '快答-聊天宝替代开源app v1.7.1' --notes-file artifacts/release-notes.md --latest
+          gh release create v1.7.2 artifacts/Kuaida-v1.7.2-Windows-x64.zip artifacts/SHA256SUMS.txt --repo $env:GITHUB_REPOSITORY --target $target --title '快答-聊天宝替代开源app v1.7.2' --notes-file artifacts/release-notes.md --latest
           if ($LASTEXITCODE -ne 0) { throw 'Release creation failed.' }

@@ -12,8 +12,8 @@ using System.Windows.Forms;
 
 [assembly: System.Reflection.AssemblyTitle("快答·开源版（免激活）")]
 [assembly: System.Reflection.AssemblyDescription("本地话术与图片文件一键发送悬浮窗")]
-[assembly: System.Reflection.AssemblyVersion("1.7.1.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.7.1.0")]
+[assembly: System.Reflection.AssemblyVersion("1.7.2.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.7.2.0")]
 
 namespace QuickReplyLite
 {
@@ -174,7 +174,7 @@ namespace QuickReplyLite
             dockWindow.Text = "吸附当前窗口"; dockWindow.AutoSize = true; dockWindow.Margin = new Padding(14, 2, 0, 0);
             dockWindow.AccessibleName = "吸附最近点击的聊天窗口，跟随移动和最小化";
             startupBar.Controls.Add(dockWindow);
-            tooltip.SetToolTip(dockWindow, "先点击聊天窗口，再勾选：快答贴在旁边随它移动，最小化时一起收起。取消勾选可自由拖动。吸附期间话术只发往绑定的窗口；重启后需要重新选择。");
+            tooltip.SetToolTip(dockWindow, "先点击聊天窗口，再勾选：快答无缝固定在它的右侧，上下对齐并同高，随它移动和收起。右侧放不下时请将聊天窗口往左移。取消勾选可自由拖动；重启后需重新选择。");
             dockWindow.CheckedChanged += delegate { ChangeDocking(); };
             tooltip.SetToolTip(startup, "勾选后，登录Windows自动运行当前目录的快答；取消勾选即关闭当前程序的开机启动。设置仅属于这台电脑的当前用户。");
             startup.CheckedChanged += delegate { ChangeStartup(); };
@@ -334,7 +334,7 @@ namespace QuickReplyLite
             if (!docking.IsAttached || sending || transferring || !Enabled || WindowState != FormWindowState.Normal || Application.OpenForms.Count > 1) return;
             try
             {
-                if (docking.Update(0) == DockingUpdate.Detached)
+                if (docking.Update() == DockingUpdate.Detached)
                 { SetDockingChecked(false); lastTarget = IntPtr.Zero; status.Text = "目标窗口已关闭，已解除吸附。"; }
             }
             catch (Exception error)
