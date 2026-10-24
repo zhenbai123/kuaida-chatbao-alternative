@@ -51,8 +51,10 @@ namespace QuickReplyLite
 
                     ShowWindow(handle, 6); Wait(delegate { return !main.Visible && session.HiddenByTarget; });
                     Check(session.IsAttached && checkbox.Checked, "minimizing the real target hides quick replies without losing attachment");
-                    ShowWindow(handle, 9); Wait(delegate { return main.Visible && !session.HiddenByTarget && IsPlaced(main, handle); });
-                    Check(Native.GetForegroundWindow() == handle, "restoring the target reveals quick replies without stealing its focus");
+                    ShowWindow(handle, 9); IntPtr beforeRestore = Native.GetForegroundWindow();
+                    Wait(delegate { return main.Visible && !session.HiddenByTarget && IsPlaced(main, handle); });
+                    Console.WriteLine("Restore foreground before=" + beforeRestore + ", after=" + Native.GetForegroundWindow() + ", target=" + handle + ", follower=" + main.Handle);
+                    Check(Native.GetForegroundWindow() == beforeRestore, "restoring quick replies preserves whichever application currently has keyboard focus");
                     ShowWindow(handle, 0); Wait(delegate { return !main.Visible; });
                     ShowWindow(handle, 4); Wait(delegate { return main.Visible && IsPlaced(main, handle); });
                     Check(!session.HiddenByTarget, "hidden external windows and no-activation restoration are followed correctly");
