@@ -1,0 +1,48 @@
+# 快答话术包格式 v1 / v2 / v3
+
+文件扩展名为 `.quickreply`，实际为标准 ZIP（UTF-8 文件名、Deflate 压缩）。包中所有路径均相对，禁止绝对路径、重复路径、`.` 和 `..` 路径段。文件不执行代码，不保存原始电脑的绝对附件路径。
+
+根目录清单文件名为 `快答话术包.json`，采用 DataContract JSON 编码，形如：
+
+```json
+{
+  "Format": "QuickReplyLite.PhrasePack",
+  "Version": 3,
+  "Library": {
+    "Version": 2,
+    "Categories": [{ "Id": "category-id", "Name": "常用", "BoardId": "personal" }],
+    "Phrases": [{
+      "Id": "phrase-id", "CategoryId": "category-id",
+      "Keyword": "问候", "ColorHex": "#2878D0", "Text": "您好！",
+      "Attachments": [{ "Name": "图片.png", "RelativePath": "素材/file-id/图片.png" }]
+    }],
+    "Preferences": { "TopMost": true, "Locked": false, "AutoSend": true, "X": -1, "Y": -1, "Width": 370, "Height": 680 },
+    "Boards": [{ "Id": "public", "Name": "公共" }, { "Id": "personal", "Name": "个人" }]
+  },
+  "Files": [{ "Path": "素材/file-id/图片.png", "Size": 123, "Sha256": "附件实际字节的SHA256小写十六进制" }]
+}
+```
+
+`Boards`、`Categories`、`Phrases` 和 `Attachments` 数组均保留顺序。板块、分类、话术 ID 在各自数组中唯一，话术的 CategoryId 指向存在的分类，分类的 BoardId 指向存在的板块。两个内置板块的ID固定为`public`及`personal`，名称分别为「公共」「个人」。板块名不可重复；分类名在同板块内不可重复，不同板块可同名。导入时生成新的本地 ID，通过板块名及其内部的分类名合并；替换模式恢复包内顺序。
+
+v1.5导入支持将所有源板块映射到用户指定的本地大板块；源同名分类合并，内容去重按目的地板块及分类计算。在指定板块模式下，替换只影响所选板块，其他板块及话术不变；在保留源板块模式下沿用完整布局追加/替换。文件结构没有改变，导出仍为v3。
+
+`Library.Preferences` 为默认占位值，导入忽略这些值，保留接收方自己的窗口和发送设置。
+
+开机启动属于当前Windows账户的系统设置，不存入本地话术JSON及话术包，导入文件不会改变它。
+
+`Files` 必须恰好对应所有被引用的附件，一个相对路径只保存一次。每项的 `Size` 和 `Sha256` 必须与 ZIP 内附件的实际字节一致。附件在包中使用 `素材/...` 路径，导入时会复制到新的本地素材路径，不覆盖已有附件。
+
+数量和大小约束：2–50个板块（含公共、个人）、1–200个分类、最多10000条话术、每条最多9个附件、关键词最多80字、板块/分类名称最多30字、正文最多50000字。每条至少含非空白正文或附件。单附件最多512 MB，附件总量最多1 GB，清单最多20 MB。
+
+CSV 为独立的文字交换格式，推荐 UTF-8 BOM，新版首行为 `板块,分类,关键词,关键词底色,话术内容`，兼容没有板块列的旧表格。按 CSV 规则用双引号包裹包含逗号、引号或换行的字段，字段内双引号重复转义。CSV 不承载附件。
+
+v2在话术对象中增加可选的 `InlineAttachments: true`，正文中的 `#图1#`、`#文件2#` 或 `#附件2#` 指向该话术附件数组的第1、2项（从1开始）。勾选回车发送时，按文字片段、附件、后续文字片段的原顺序执行发送；标记不作为文字发出。未被标记引用的附件最后发送。标记越界会拒绝保存/导入，避免错误发送。
+
+旧v2包的外层 `Version` 为2，`Library.Version` 为1，需要快答v1.3及以上；旧v1包不支持混排位置。`InlineAttachments`省略时默认false。v1.4仍能读取旧v1/v2包，缺少板块信息时在预览选择目标板块。聊天宝和无板块列的旧CSV也使用此目标板块。
+
+v1.4统一导出外层`Version: 3`、内层`Library.Version: 2`，新增`Boards`和`Category.BoardId`，同时保留v2图文混排。v3包需要快答v1.4及以上，旧版会拒绝，防止板块丢失。导出全部保留空自定义板块；只导出板块或分类时，包含必要的板块定义和两个内置板块。
+
+本地`话术.json`也使用`Version: 2`。打开无板块字段的旧`Version: 1`数据时，先将分类归入个人，保存原始JSON升级前备份，再原子写入新版数据。窗口设置增加`ActiveBoardId`、`CategoryPanelHeight`，仅保存在本机，导入保留接收方的设置。
+
+该格式为快答自己的公开格式；聊天宝 `.bangkefu` 的兼容读取见 [BANGKEFU-FORMAT.md](BANGKEFU-FORMAT.md)。

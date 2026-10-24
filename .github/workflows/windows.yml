@@ -1,0 +1,92 @@
+name: Windows build, tests and screenshots
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: 'Publish v1.6.2 release after all checks pass'
+        type: boolean
+        default: false
+      update_screenshots:
+        description: 'Commit generated Windows screenshots to main'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+      - name: Core tests
+        shell: pwsh
+        run: |
+          dotnet run --project tests/CoreTests.csproj --configuration Release
+          if ($LASTEXITCODE -ne 0) { throw 'Core tests failed.' }
+      - name: Build activation-free Windows app
+        shell: powershell
+        run: ./scripts/build.ps1
+      - name: Render real WinForms screenshots using demonstration data
+        shell: powershell
+        run: ./scripts/screenshots.ps1
+      - name: Package portable Windows app
+        shell: powershell
+        run: ./scripts/package.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kuaida-windows-and-screenshots
+          path: |
+            artifacts/Kuaida-*.zip
+            artifacts/SHA256SUMS.txt
+            docs/screenshots/*.png
+          if-no-files-found: error
+      - name: Save screenshots to the repository
+        if: github.event_name == 'workflow_dispatch' && inputs.update_screenshots && github.ref == 'refs/heads/main'
+        shell: pwsh
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/screenshots/*.png
+          git diff --cached --quiet
+          if ($LASTEXITCODE -eq 1) {
+            git commit -m 'docs: add Windows application screenshots with demo data'
+            if ($LASTEXITCODE -ne 0) { throw 'Screenshot commit failed.' }
+            git push origin HEAD:main
+            if ($LASTEXITCODE -ne 0) { throw 'Screenshot push failed.' }
+          } elseif ($LASTEXITCODE -ne 0) { throw 'Unable to compare screenshots.' }
+      - name: Publish release
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_release && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $notes = @'
+          快答-聊天宝替代开源app v1.6.2
+
+          Windows 10 / 11 64 位本地话术悬浮窗，MIT 开源、免激活、无需账号。完整解压后双击 QuickReplyLite.exe；需要 .NET Framework 4.8。
+
+          支持箭头一键发送、双击仅粘贴、悬浮置顶、板块分类、关键词底色、图片文件预览、拖动排序、批量替换、话术导入导出、桌面快捷方式与开机启动。
+
+          附件 Kuaida-v1.6.2-Windows-x64.zip 是可直接使用的 Windows 软件；Source code 是源码。升级请保留整个 Data 文件夹。不同聊天软件的发送与附件行为请先在测试会话确认。
+          '@
+          $notes | Set-Content artifacts/release-notes.md -Encoding utf8
+          gh release view v1.6.2 --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) { throw 'Release v1.6.2 already exists; refusing to replace a published release.' }
+          $target = git rev-parse HEAD
+          gh release create v1.6.2 artifacts/Kuaida-v1.6.2-Windows-x64.zip artifacts/SHA256SUMS.txt --repo $env:GITHUB_REPOSITORY --target $target --title '快答-聊天宝替代开源app v1.6.2' --notes-file artifacts/release-notes.md --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Release creation failed.' }

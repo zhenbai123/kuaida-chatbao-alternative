@@ -1,0 +1,12 @@
+tools/
+artifacts/
+release/
+tests/bin/
+tests/obj/
+Data/
+converted/
+owner-licensing/
+*.bangkefu
+*.license
+*.user
+.DS_Store
