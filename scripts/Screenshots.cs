@@ -23,7 +23,7 @@ namespace QuickReplyLite
                 Application.SetCompatibleTextRenderingDefault(false);
                 string output = args.Length == 0 ? Path.GetFullPath("docs/screenshots") : args[0];
                 Directory.CreateDirectory(output);
-                LocalStore store = Demo(temporary);
+                LocalStore store = Demo(Path.Combine(temporary, "Data"));
                 using (MainForm main = new MainForm(store)) Capture(main, output, "main");
                 using (PhraseEditor editor = new PhraseEditor(store, store.Data.Phrases[1], store.Data.Categories[0].Id)) Capture(editor, output, "editor");
                 using (BatchReplaceForm batch = new BatchReplaceForm(store))
@@ -55,12 +55,24 @@ namespace QuickReplyLite
         private static void Capture(Form form, string output, string name)
         {
             if (!form.Visible) form.Show();
-            form.Location = new Point(20, 20); form.Activate(); form.Refresh(); Pump();
+            form.Location = new Point(20, 20); form.TopMost = true; form.Activate(); form.Refresh(); Pump();
             using (Bitmap bitmap = new Bitmap(form.Width, form.Height))
             {
                 form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, form.Size));
                 bitmap.Save(Path.Combine(output, name + ".png"), ImageFormat.Png);
             }
+            // Also capture visible pixels: RichTextBox does not implement DrawToBitmap
+            // fully. Keep both outputs so the screenshot method can be verified.
+            try
+            {
+                using (Bitmap desktop = new Bitmap(form.Width, form.Height))
+                using (Graphics graphics = Graphics.FromImage(desktop))
+                {
+                    graphics.CopyFromScreen(form.Location, Point.Empty, form.Size);
+                    desktop.Save(Path.Combine(output, name + "-desktop.png"), ImageFormat.Png);
+                }
+            }
+            catch (Exception error) { Console.WriteLine("Desktop capture unavailable: " + error.Message); }
             Console.WriteLine(name + ".png: " + form.Width + " x " + form.Height);
             form.Close(); Pump();
         }
