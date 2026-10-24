@@ -71,6 +71,10 @@ namespace QuickReplyLite
                     if (args.Length > 0)
                     {
                         Directory.CreateDirectory(args[0]);
+                        // Match the demo window's height to the follower so the
+                        // screenshot contains only the two windows, not runner logs.
+                        Move(handle, area.Left + 30, main.Top, 500, main.Height);
+                        Wait(delegate { return IsPlaced(main, handle); });
                         SetForegroundWindow(handle); main.TopMost = true; main.Refresh(); Pump();
                         Rectangle combined = Rectangle.Union(WindowsWindowDockingHost.VisibleBounds(handle), WindowsWindowDockingHost.VisibleBounds(main.Handle));
                         using (Bitmap bitmap = new Bitmap(combined.Width, combined.Height))
@@ -110,6 +114,7 @@ namespace QuickReplyLite
             Label header = new Label { Text = "演示会话", Dock = DockStyle.Top, Height = 72, Padding = new Padding(22, 20, 0, 0), Font = new Font(form.Font.FontFamily, 18, FontStyle.Bold), ForeColor = Color.FromArgb(37, 112, 201) };
             Label description = new Label { Text = "快答吸附在这个窗口旁边。\r\n\r\n移动窗口 → 快答跟随\r\n最小化窗口 → 快答收起\r\n恢复窗口 → 快答重新出现\r\n\r\n这里只使用演示内容，不会发送消息。", Dock = DockStyle.Fill, Padding = new Padding(22, 25, 12, 0) };
             TextBox input = new TextBox { Multiline = true, Dock = DockStyle.Bottom, Height = 100, Text = "这里是演示聊天输入框" };
+            form.Activated += delegate { input.Select(input.TextLength, 0); };
             form.Controls.Add(description); form.Controls.Add(input); form.Controls.Add(header); return form;
         }
 
