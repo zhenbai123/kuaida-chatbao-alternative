@@ -316,18 +316,22 @@ namespace QuickReplyLite
         {
             if (updatingDocking || !ready) return;
             if (!dockWindow.Checked)
-            { docking.Detach(); status.Text = "已取消吸附，可自由拖动快答。"; return; }
+            { docking.Detach(); UpdateDockingSizeLimits(); status.Text = "已取消吸附，可自由拖动快答。"; return; }
             if (sending || transferring || !docking.Attach(WindowsWindowDockingHost.RootWindow(lastTarget)))
             {
                 SetDockingChecked(false);
                 status.Text = "请先点击要吸附的聊天窗口，再勾选吸附。"; tooltip.SetToolTip(status, status.Text); return;
             }
             lastTarget = docking.Target;
+            UpdateDockingSizeLimits();
             status.Text = "已吸附 · 跟随该窗口，取消勾选可解除。"; UpdateDocking();
         }
 
         private void SetDockingChecked(bool value)
-        { updatingDocking = true; try { dockWindow.Checked = value; } finally { updatingDocking = false; } }
+        { updatingDocking = true; try { dockWindow.Checked = value; } finally { updatingDocking = false; UpdateDockingSizeLimits(); } }
+
+        private void UpdateDockingSizeLimits()
+        { MinimumSize = new Size(S(320), docking.IsAttached ? 0 : S(380)); }
 
         private void UpdateDocking()
         {

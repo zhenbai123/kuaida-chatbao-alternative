@@ -90,6 +90,7 @@ namespace QuickReplyLite
                     }
 
                     checkbox.Checked = false; Rectangle detached = main.Bounds;
+                    Check(main.MinimumSize.Height > 0, "detaching restores the normal floating window's minimum height");
                     Move(handle, area.Left + 100, area.Top + 70, 450, 500); Pump();
                     Check(!session.IsAttached && main.Bounds == detached, "unchecking attachment stops movement and restores free floating");
                     SetField(main, "lastTarget", handle); checkbox.Checked = true; Wait(delegate { return IsPlaced(main, handle); });
