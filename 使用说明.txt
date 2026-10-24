@@ -1,4 +1,4 @@
-﻿# 快答 · 开源免激活版 v1.6.2
+﻿# 快答-聊天宝替代开源app v1.6.2
 
 用于 Windows 10 / 11（64位）的本地话术悬浮窗。无需激活码或账号，完全离线使用，不需要服务器、数据库或AI服务。源码采用MIT许可证。
 
@@ -36,4 +36,6 @@ Windows安装.NET Framework 4.8开发环境后，双击本源码包内的`build-
 dotnet run --project tests/CoreTests.csproj
 ```
 
-源码与编译后的Windows EXE、应用图标及ZIP完整性均会核对。核心数据和桌面快捷方式管理逻辑通过自动检查；开发环境为Mac，Windows实际窗口、桌面`.lnk`创建、系统自启与聊天软件发送尚未实机验证。
+源码与编译后的Windows EXE、应用图标及ZIP完整性均会核对。核心测试在 Windows 上运行，功能页面截图使用演示数据。实际桌面快捷方式、系统自启及各聊天软件发送兼容性请在自己的 Windows 电脑上验证。
+
+项目主页与格式说明：https://github.com/zhenbai123/kuaida-chatbao-alternative

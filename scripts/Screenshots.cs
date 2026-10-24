@@ -13,6 +13,11 @@ namespace QuickReplyLite
     // registers startup, creates shortcuts, or reads a user's existing Data directory.
     internal static class ScreenshotProgram
     {
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct NativeRectangle { internal int Left, Top, Right, Bottom; }
+        [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+        private static extern int DwmGetWindowAttribute(IntPtr window, int attribute, out NativeRectangle rectangle, int size);
+
         [STAThread]
         private static int Main(string[] args)
         {
@@ -25,7 +30,11 @@ namespace QuickReplyLite
                 Directory.CreateDirectory(output);
                 LocalStore store = Demo(Path.Combine(temporary, "Data"));
                 using (MainForm main = new MainForm(store)) Capture(main, output, "main");
-                using (PhraseEditor editor = new PhraseEditor(store, store.Data.Phrases[1], store.Data.Categories[0].Id)) Capture(editor, output, "editor");
+                using (PhraseEditor editor = new PhraseEditor(store, store.Data.Phrases[1], store.Data.Categories[0].Id))
+                {
+                    editor.Show(); Pump(); Field<TextBox>(editor, "body").Select(0, 0);
+                    Capture(editor, output, "editor");
+                }
                 using (BatchReplaceForm batch = new BatchReplaceForm(store))
                 {
                     batch.Show(); Pump();
@@ -56,23 +65,18 @@ namespace QuickReplyLite
         {
             if (!form.Visible) form.Show();
             form.Location = new Point(20, 20); form.TopMost = true; form.Activate(); form.Refresh(); Pump();
-            using (Bitmap bitmap = new Bitmap(form.Width, form.Height))
+            // DWM frame bounds exclude invisible resize borders and the desktop behind
+            // them. Copy actual on-screen pixels, including native RichTextBox contents.
+            NativeRectangle frame;
+            if (DwmGetWindowAttribute(form.Handle, 9, out frame, System.Runtime.InteropServices.Marshal.SizeOf(typeof(NativeRectangle))) != 0)
+                throw new InvalidOperationException("Cannot obtain visible window frame for screenshot.");
+            Rectangle bounds = Rectangle.FromLTRB(frame.Left, frame.Top, frame.Right, frame.Bottom);
+            using (Bitmap bitmap = new Bitmap(bounds.Width, bounds.Height))
+            using (Graphics graphics = Graphics.FromImage(bitmap))
             {
-                form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, form.Size));
+                graphics.CopyFromScreen(bounds.Location, Point.Empty, bounds.Size);
                 bitmap.Save(Path.Combine(output, name + ".png"), ImageFormat.Png);
             }
-            // Also capture visible pixels: RichTextBox does not implement DrawToBitmap
-            // fully. Keep both outputs so the screenshot method can be verified.
-            try
-            {
-                using (Bitmap desktop = new Bitmap(form.Width, form.Height))
-                using (Graphics graphics = Graphics.FromImage(desktop))
-                {
-                    graphics.CopyFromScreen(form.Location, Point.Empty, form.Size);
-                    desktop.Save(Path.Combine(output, name + "-desktop.png"), ImageFormat.Png);
-                }
-            }
-            catch (Exception error) { Console.WriteLine("Desktop capture unavailable: " + error.Message); }
             Console.WriteLine(name + ".png: " + form.Width + " x " + form.Height);
             form.Close(); Pump();
         }
@@ -115,7 +119,7 @@ namespace QuickReplyLite
             }
             store.Data.Phrases[1].Attachments.Add(store.CopyAttachment(image));
             store.Data.Preferences.ActiveBoardId = Board.PublicId;
-            store.Data.Preferences.TopMost = false;
+            store.Data.Preferences.TopMost = true;
             store.Data.Preferences.Width = 400; store.Data.Preferences.Height = 740;
             store.Data.Preferences.CategoryPanelHeight = 164;
             store.Save(); return store;
