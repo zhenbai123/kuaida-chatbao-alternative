@@ -12,8 +12,8 @@ using System.Windows.Forms;
 
 [assembly: System.Reflection.AssemblyTitle("快答·开源版（免激活）")]
 [assembly: System.Reflection.AssemblyDescription("本地话术与图片文件一键发送悬浮窗")]
-[assembly: System.Reflection.AssemblyVersion("1.6.2.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.6.2.0")]
+[assembly: System.Reflection.AssemblyVersion("1.7.0.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.7.0.0")]
 
 namespace QuickReplyLite
 {
@@ -77,6 +77,9 @@ namespace QuickReplyLite
         private readonly CheckBox locked = new CheckBox();
         private readonly CheckBox autoSend = new CheckBox();
         private readonly CheckBox startup = new CheckBox();
+        private readonly CheckBox dockWindow = new CheckBox();
+        private readonly WindowDockingSession docking;
+        private bool updatingDocking;
         private readonly IStartupEntry startupEntry = new WindowsStartupEntry();
         private bool updatingStartup;
         private readonly ToolTip tooltip = new ToolTip();
@@ -106,6 +109,7 @@ namespace QuickReplyLite
         public MainForm(LocalStore value)
         {
             store = value;
+            docking = new WindowDockingSession(new WindowsWindowDockingHost(this));
             Text = Program.EditionName;
             Icon = Program.ApplicationIcon;
             Font = new Font("Microsoft YaHei UI", 9F);
@@ -167,6 +171,11 @@ namespace QuickReplyLite
             FlowLayoutPanel startupBar = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Padding = new Padding(3, 0, 0, 0) };
             startup.Text = "开机启动"; startup.AutoSize = true; startup.Margin = new Padding(2, 2, 0, 0); startup.AccessibleName = "登录Windows后自动运行快答";
             startupBar.Controls.Add(startup); phraseArea.Controls.Add(startupBar, 0, 1);
+            dockWindow.Text = "吸附当前窗口"; dockWindow.AutoSize = true; dockWindow.Margin = new Padding(14, 2, 0, 0);
+            dockWindow.AccessibleName = "吸附最近点击的聊天窗口，跟随移动和最小化";
+            startupBar.Controls.Add(dockWindow);
+            tooltip.SetToolTip(dockWindow, "先点击聊天窗口，再勾选：快答贴在旁边随它移动，最小化时一起收起。取消勾选可自由拖动。吸附期间话术只发往绑定的窗口；重启后需要重新选择。");
+            dockWindow.CheckedChanged += delegate { ChangeDocking(); };
             tooltip.SetToolTip(startup, "勾选后，登录Windows自动运行当前目录的快答；取消勾选即关闭当前程序的开机启动。设置仅属于这台电脑的当前用户。");
             startup.CheckedChanged += delegate { ChangeStartup(); };
 
@@ -260,7 +269,9 @@ namespace QuickReplyLite
             tracker.Interval = 120; tracker.Tick += delegate
             {
                 IntPtr current = Native.GetForegroundWindow();
-                if (!sending && current != IntPtr.Zero && Native.IsWindow(current) && !Native.IsOwnWindow(current)) lastTarget = current;
+                bool attachedAtStart = docking.IsAttached;
+                if (!sending && !attachedAtStart && current != IntPtr.Zero && Native.IsWindow(current) && !Native.IsOwnWindow(current)) lastTarget = current;
+                UpdateDocking();
             }; tracker.Start();
             savePosition.Interval = 500; savePosition.Tick += delegate { savePosition.Stop(); SavePreferences(); };
             Move += delegate { SchedulePositionSave(); }; ResizeEnd += delegate { SchedulePositionSave(); };
@@ -282,7 +293,8 @@ namespace QuickReplyLite
 
         protected override void WndProc(ref Message message)
         {
-            if (locked != null && locked.Checked && message.Msg == 0x0112 && ((message.WParam.ToInt64() & 0xFFF0) == 0xF010 || (message.WParam.ToInt64() & 0xFFF0) == 0xF000)) return;
+            bool movingLocked = (locked != null && locked.Checked) || (docking != null && docking.IsAttached);
+            if (message.Msg == 0x0112 && ((movingLocked && (message.WParam.ToInt64() & 0xFFF0) == 0xF010) || (locked != null && locked.Checked && (message.WParam.ToInt64() & 0xFFF0) == 0xF000))) return;
             if (message.Msg == 0x0021 && list != null && list.IsHandleCreated)
             {
                 Point point = list.PointToClient(Cursor.Position);
@@ -290,11 +302,43 @@ namespace QuickReplyLite
                 { message.Result = new IntPtr(3); return; } // MA_NOACTIVATE preserves the chat's focus for arrow clicks.
             }
             base.WndProc(ref message);
-            if (locked != null && locked.Checked && message.Msg == 0x0084)
+            if (message.Msg == 0x0084)
             {
                 long hit = message.Result.ToInt64();
-                if (hit == 2 || (hit >= 10 && hit <= 17)) message.Result = new IntPtr(1);
+                if ((movingLocked && hit == 2) || (locked != null && locked.Checked && hit >= 10 && hit <= 17)) message.Result = new IntPtr(1);
             }
+        }
+
+        protected override bool ShowWithoutActivation
+        { get { return (docking != null && docking.HiddenByTarget) || base.ShowWithoutActivation; } }
+
+        private void ChangeDocking()
+        {
+            if (updatingDocking || !ready) return;
+            if (!dockWindow.Checked)
+            { docking.Detach(); status.Text = "已取消吸附，可自由拖动快答。"; return; }
+            if (sending || transferring || !docking.Attach(WindowsWindowDockingHost.RootWindow(lastTarget)))
+            {
+                SetDockingChecked(false);
+                status.Text = "请先点击要吸附的聊天窗口，再勾选吸附。"; tooltip.SetToolTip(status, status.Text); return;
+            }
+            lastTarget = docking.Target;
+            status.Text = "已吸附 · 跟随该窗口，取消勾选可解除。"; UpdateDocking();
+        }
+
+        private void SetDockingChecked(bool value)
+        { updatingDocking = true; try { dockWindow.Checked = value; } finally { updatingDocking = false; } }
+
+        private void UpdateDocking()
+        {
+            if (!docking.IsAttached || sending || transferring || !Enabled || WindowState != FormWindowState.Normal || Application.OpenForms.Count > 1) return;
+            try
+            {
+                if (docking.Update(S(4)) == DockingUpdate.Detached)
+                { SetDockingChecked(false); lastTarget = IntPtr.Zero; status.Text = "目标窗口已关闭，已解除吸附。"; }
+            }
+            catch (Exception error)
+            { docking.Detach(); SetDockingChecked(false); lastTarget = IntPtr.Zero; status.Text = "吸附已停止：" + error.Message; tooltip.SetToolTip(status, status.Text); }
         }
 
         private Button MakeButton(string text, int width)
@@ -537,13 +581,15 @@ namespace QuickReplyLite
         private async Task SendPhrase(Phrase phrase, DeliveryMode mode)
         {
             if (sending || IsDisposed) return;
+            bool wasAttached = docking.IsAttached; UpdateDocking();
+            if (wasAttached && !docking.IsAttached) return;
             IntPtr target = lastTarget;
             bool submit = mode == DeliveryMode.Send;
             string[] files = phrase.Attachments.Select(a => store.Resolve(a)).ToArray();
             try
             {
                 foreach (string file in files) if (!File.Exists(file)) throw new FileNotFoundException("附件丢失，请重新添加：" + Path.GetFileName(file));
-                sending = true; UseWaitCursor = true; StopDragHold(); tooltip.Hide(list); status.Text = submit ? "正在发送，请勿切换聊天窗口…" : "正在放入聊天框，请勿切换窗口…";
+                sending = true; dockWindow.Enabled = false; UseWaitCursor = true; StopDragHold(); tooltip.Hide(list); status.Text = submit ? "正在发送，请勿切换聊天窗口…" : "正在放入聊天框，请勿切换窗口…";
                 foreach (DeliveryStep step in DeliveryPlan.Build(phrase, mode))
                 {
                     await Native.FocusTarget(target, lifetime.Token);
@@ -558,7 +604,7 @@ namespace QuickReplyLite
             }
             catch (OperationCanceledException) { }
             catch (Exception error) { if (!IsDisposed) { status.Text = error.Message; tooltip.SetToolTip(status, error.Message); } }
-            finally { sending = false; if (!IsDisposed) UseWaitCursor = false; }
+            finally { sending = false; if (!IsDisposed) { dockWindow.Enabled = true; UseWaitCursor = false; } }
         }
 
         private void CopyText(Phrase phrase)

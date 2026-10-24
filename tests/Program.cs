@@ -57,6 +57,7 @@ internal static class Tests
             InteractionTests.Run(Path.Combine(root, "interaction"), Check);
             SettingsTests.Run(Path.Combine(root, "settings"), Check);
             DesktopShortcutTests.Run(Path.Combine(root, "desktop-shortcut"), Check);
+            WindowDockingTests.Run(Check);
             for (int i = 0; i < args.Length; i += 2) BangkefuTests.RealFile(args[i], args.Length > i + 1 ? args[i + 1] : Path.Combine(root, "converted-" + i + ".quickreply"), Path.Combine(root, "real-library-" + i), Check);
             Console.WriteLine("All " + checks + " checks passed.");
         }
