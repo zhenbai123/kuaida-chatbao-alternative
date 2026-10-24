@@ -19,6 +19,15 @@ internal static class WindowDockingTests
     internal static void Run(Action<bool, string> check)
     {
         Rectangle area = new Rectangle(0, 0, 1920, 1040);
+        Rectangle rightTarget = new Rectangle(100, 100, 700, 600);
+        Rectangle flush = DockingLayout.Place(rightTarget, new Size(370, 680), area, 0);
+        check(flush.Left == rightTarget.Right && flush.Top == rightTarget.Top, "zero-gap docking touches the target's right edge without a spacer");
+        Rectangle leftTarget = new Rectangle(1200, 180, 700, 600);
+        flush = DockingLayout.Place(leftTarget, new Size(370, 680), area, 0);
+        check(flush.Right == leftTarget.Left && flush.Top == leftTarget.Top, "zero-gap docking also touches the left edge when the right side has insufficient space");
+        Rectangle negativeTarget = new Rectangle(-1700, -180, 900, 700);
+        flush = DockingLayout.Place(negativeTarget, new Size(370, 680), new Rectangle(-1920, -200, 1920, 1040), 0);
+        check(flush.Left == negativeTarget.Right, "zero-gap docking remains flush on monitors with negative coordinates");
         Rectangle result = DockingLayout.Place(new Rectangle(100, 100, 700, 600), new Size(370, 680), area, 4);
         check(result == new Rectangle(804, 100, 370, 680), "docking aligns the follower to the target's right edge with a small gap");
         result = DockingLayout.Place(new Rectangle(1200, 180, 700, 600), new Size(370, 680), area, 4);

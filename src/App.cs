@@ -12,8 +12,8 @@ using System.Windows.Forms;
 
 [assembly: System.Reflection.AssemblyTitle("快答·开源版（免激活）")]
 [assembly: System.Reflection.AssemblyDescription("本地话术与图片文件一键发送悬浮窗")]
-[assembly: System.Reflection.AssemblyVersion("1.7.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.7.0.0")]
+[assembly: System.Reflection.AssemblyVersion("1.7.1.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.7.1.0")]
 
 namespace QuickReplyLite
 {
@@ -334,7 +334,7 @@ namespace QuickReplyLite
             if (!docking.IsAttached || sending || transferring || !Enabled || WindowState != FormWindowState.Normal || Application.OpenForms.Count > 1) return;
             try
             {
-                if (docking.Update(S(4)) == DockingUpdate.Detached)
+                if (docking.Update(0) == DockingUpdate.Detached)
                 { SetDockingChecked(false); lastTarget = IntPtr.Zero; status.Text = "目标窗口已关闭，已解除吸附。"; }
             }
             catch (Exception error)
