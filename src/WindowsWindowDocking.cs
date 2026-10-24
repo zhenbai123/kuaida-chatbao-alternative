@@ -22,6 +22,8 @@ namespace QuickReplyLite
         [DllImport("dwmapi.dll", EntryPoint = "DwmGetWindowAttribute")] private static extern int GetFrame(IntPtr window, int attribute, out RECT value, int size);
         [DllImport("dwmapi.dll", EntryPoint = "DwmGetWindowAttribute")] private static extern int GetCloaked(IntPtr window, int attribute, out int value, int size);
         [DllImport("user32.dll", SetLastError = true)] private static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
+        [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern IntPtr GetWindowLongPtr(IntPtr window, int index);
+        [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] private static extern IntPtr SetWindowLongPtr(IntPtr window, int index, IntPtr value);
 
         internal WindowsWindowDockingHost(Form form) { follower = form; }
         internal static IntPtr RootWindow(IntPtr window) { return GetAncestor(window, 2); }
@@ -55,6 +57,17 @@ namespace QuickReplyLite
             if (!SetWindowPos(follower.Handle, IntPtr.Zero, bounds.Left - left, bounds.Top - top, bounds.Width + left + right, bounds.Height + top + bottom, noActivateOrZOrder))
                 throw new Win32Exception(Marshal.GetLastWin32Error(), "无法跟随目标窗口，请取消吸附后重试。");
         }
-        public void SetFollowerVisible(bool visible) { if (visible) follower.Show(); else follower.Hide(); }
+        public void SetFollowerVisible(bool visible)
+        {
+            if (!visible) { follower.Hide(); return; }
+            // Showing an existing WinForms handle can restore a child's focus even
+            // with ShowWithoutActivation. Temporarily prohibit activation at the
+            // native window level; restore the style immediately for normal editing.
+            IntPtr window = follower.Handle;
+            IntPtr original = GetWindowLongPtr(window, -20);
+            SetWindowLongPtr(window, -20, new IntPtr(original.ToInt64() | 0x08000000L));
+            try { follower.Show(); }
+            finally { SetWindowLongPtr(window, -20, original); }
+        }
     }
 }
