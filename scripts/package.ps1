@@ -1,4 +1,4 @@
-﻿param([string]$Version = '1.7.2')
+﻿param([string]$Version = '1.7.3')
 $ErrorActionPreference = 'Stop'
 Set-Location (Split-Path $PSScriptRoot -Parent)
 $stage = 'artifacts/Windows'

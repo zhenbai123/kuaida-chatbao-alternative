@@ -50,6 +50,44 @@ internal static class BangkefuTests
         Reject(delegate { PhraseContent.Build(invalid); }, "out-of-range inline image references are rejected before sending", check);
         MissingMarkers(Path.Combine(root, "missing-markers"), reference, name, image, check);
         CompatibilityMatrix(Path.Combine(root, "compatibility-matrix"), image, check);
+        HeaderAndColors(Path.Combine(root, "header-colors"), reference, name, image, check);
+    }
+
+    private static void HeaderAndColors(string root, string reference, string name, byte[] image, Action<bool, string> check)
+    {
+        Directory.CreateDirectory(root);
+        string header = "一级分类（必填）,二级分类,关键词,话术（必填）,图片,背景色\r\n";
+        string[] colors = { "00BCD4", "060606", "FF9800", "F44336", "3F51B5", "9C27B0", "4CAF50", "3A84FF", "FFFFFF", "#12aBcD", "" };
+        string body = "";
+        for (int i = 0; i < colors.Length; i++) body += String.Join(",", new[] { "演示分类", "", "颜色" + i, "前文" + (i == 0 ? "#图1#" : "") + "^J后文", i == 0 ? reference : "", colors[i] }.Select(Cell)) + "\r\n";
+        for (int variant = 0; variant < 4; variant++)
+        {
+            bool withHeader = variant >= 2, encrypted = variant % 2 == 1;
+            string path = Path.Combine(root, "variant-" + variant + ".bangkefu"), cipher = Path.Combine(root, "cipher-" + variant + ".bangkefu");
+            WriteArchive(path, (withHeader ? "\ufeff\r\n" + header : "") + body, name, image);
+            if (encrypted) { Encrypt(path, cipher); path = cipher; }
+            using (ImportedLibrary incoming = LibraryTransfer.Load(path))
+            {
+                check(incoming.Library.Phrases.Count == colors.Length && incoming.Library.Categories.Count == 1 && incoming.Library.Categories[0].Name == "演示分类"
+                    && incoming.Library.Phrases.Select(p => p.ColorHex).SequenceEqual(colors.Select(c => c.Length == 0 ? "" : "#" + c.TrimStart('#').ToUpperInvariant())),
+                    "bangkefu variant " + variant + ": complete optional header is excluded and every original or custom RGB color is preserved independently of the editor palette");
+                check(incoming.Warnings.Count == 0 && incoming.FileCount == 1 && incoming.Library.Phrases[0].Keyword == "颜色0" && incoming.Library.Phrases[0].Text == "前文#图1#\r\n后文"
+                    && File.ReadAllBytes(incoming.Sources[incoming.Library.Phrases[0].Attachments[0].RelativePath]).SequenceEqual(image),
+                    "bangkefu variant " + variant + ": header detection leaves the first real phrase, inline image bytes and newlines intact");
+            }
+        }
+        string plain = Path.Combine(root, "edge-cases.bangkefu");
+        WriteArchive(plain, " 一级分类(必填) , 二级分类 , 关键词 , 话术(必填) , 图片 , 背景色 \r\n常用,,问候,您好,,#12abcd\r\n", name, image);
+        using (ImportedLibrary incoming = LibraryTransfer.Load(plain)) check(incoming.Library.Phrases.Count == 1 && incoming.Library.Phrases[0].ColorHex == "#12ABCD", "known export headers accept surrounding whitespace and either Chinese or ASCII required-field parentheses");
+        WriteArchive(plain, "一级分类（必填）,二级分类,关键词,话术（必填）,,060606\r\n", name, image);
+        using (ImportedLibrary incoming = LibraryTransfer.Load(plain)) check(incoming.Library.Phrases.Count == 1 && incoming.Library.Phrases[0].Text == "话术（必填）", "a real first phrase resembling column labels is retained when the complete schema does not match");
+        WriteArchive(plain, header + "常用,,问候,您好,,not-a-color\r\n", name, image);
+        bool located = false; try { using (ImportedLibrary ignored = LibraryTransfer.Load(plain)) { } } catch (InvalidDataException error) { located = error.Message.Contains("第 2 行") && error.Message.Contains("颜色值"); }
+        check(located, "genuinely invalid colors report the source row instead of silently changing or dropping a phrase");
+        WriteArchive(plain, header, name, image);
+        Reject(delegate { using (ImportedLibrary ignored = LibraryTransfer.Load(plain)) { } }, "a header-only knowledge base cannot create a bogus phrase from column titles", check);
+        WriteArchive(plain, "常用,,问候,您好,,FFFFFF\r\n" + header, name, image);
+        Reject(delegate { using (ImportedLibrary ignored = LibraryTransfer.Load(plain)) { } }, "header detection is limited to the leading record and cannot discard unexpected records inside the library", check);
     }
 
     private static void MissingMarkers(string root, string reference, string name, byte[] image, Action<bool, string> check)

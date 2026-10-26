@@ -67,6 +67,18 @@ namespace QuickReplyLite
             using (MD5 md5 = MD5.Create()) return "images/" + BitConverter.ToString(md5.ComputeHash(Encoding.UTF8.GetBytes(reference))).Replace("-", "").ToLowerInvariant() + extension;
         }
 
+        private static bool IsHeader(List<string> row)
+        {
+            if (row.Count != 6) return false;
+            string[] columns = row.Select(value => value.Trim().TrimStart('\ufeff').Replace('（', '(').Replace('）', ')').Replace("(必填)", "").Trim()).ToArray();
+            // Only a complete leading schema is a header. A single cell such as
+            // "背景色" must never cause a real phrase to be silently discarded.
+            return columns[0] == "一级分类" && columns[1] == "二级分类" && columns[2] == "关键词"
+                && (columns[3] == "话术" || columns[3] == "话术内容")
+                && (columns[4] == "图片" || columns[4] == "附件")
+                && (columns[5] == "背景色" || columns[5] == "关键词底色");
+        }
+
         public static ImportedLibrary Load(string path)
         {
             ImportedLibrary result = new ImportedLibrary { Library = new Document(), TemporaryFolder = Path.Combine(Path.GetTempPath(), "quick-reply-bangkefu-" + Guid.NewGuid().ToString("N")) };
@@ -116,16 +128,19 @@ namespace QuickReplyLite
                         using (StreamReader reader = new StreamReader(buffer, new UTF8Encoding(false, true), true)) text = reader.ReadToEnd();
                     }
                     List<List<string>> rows = LibraryTransfer.ParseCsv(text);
+                    bool firstRecord = true;
                     for (int rowIndex = 0; rowIndex < rows.Count; rowIndex++)
                     {
                         List<string> row = rows[rowIndex];
                         if (row.All(String.IsNullOrWhiteSpace)) continue;
+                        bool header = firstRecord && IsHeader(row); firstRecord = false;
+                        if (header) continue;
                         if (row.Count != 6) throw new InvalidDataException("原知识库含有尚未支持的列结构，已停止导入以避免遗漏内容。");
                         string categoryName = row[0].Trim(); if (categoryName.Length == 0) categoryName = "导入的话术";
                         if (!String.IsNullOrWhiteSpace(row[1])) categoryName += " / " + row[1].Trim();
                         Category category = result.Library.Categories.FirstOrDefault(c => String.Equals(c.Name, categoryName, StringComparison.OrdinalIgnoreCase));
                         if (category == null) { category = new Category { Id = Guid.NewGuid().ToString("N"), Name = categoryName }; result.Library.Categories.Add(category); }
-                        string color = row[5].Trim().TrimStart('#'); if (color.Length > 0 && !Regex.IsMatch(color, @"^[0-9a-fA-F]{6}$")) throw new InvalidDataException("原知识库含有无法识别的关键词颜色。");
+                        string color = row[5].Trim().TrimStart('#'); if (color.Length > 0 && !Regex.IsMatch(color, @"^[0-9a-fA-F]{6}$")) throw new InvalidDataException("原知识库第 " + (rowIndex + 1) + " 行的关键词背景色无效，需要6位十六进制颜色值。");
                         List<string> references = row[4].Split(new[] { "|||" }, StringSplitOptions.RemoveEmptyEntries).Select(r => r.Trim()).ToList();
                         Phrase phrase = new Phrase { Id = Guid.NewGuid().ToString("N"), CategoryId = category.Id, Keyword = row[2], ColorHex = color.Length == 0 ? "" : "#" + color.ToUpperInvariant(), Text = row[3].Replace("^J", "\r\n"), InlineAttachments = references.Count > 0 };
                         foreach (string reference in references)

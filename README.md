@@ -14,6 +14,12 @@
 
 这是独立开发的聊天宝类工具替代项目，与聊天宝官方无隶属关系；提供的是本项目完整开源代码。
 
+## .bangkefu 导入兼容（v1.7.3）
+
+支持带表头及无表头的 6 列知识库导出文件。首行的「背景色」作为字段名称识别，不再误当成颜色值。有效的 6 位 RGB 颜色会按原值保留，包含编辑器默认色板之外的颜色；编辑既有话术时也会显示该颜色。
+
+未知列结构、无效颜色或损坏附件仍会明确报错；原文件不被改写。
+
 ## 吸附当前窗口（v1.7.2 新增）
 
 先点击要跟随的聊天窗口，再回到快答，勾选「开机启动」旁的 **「吸附当前窗口」**。
@@ -61,7 +67,7 @@
 
 ## 下载与开始使用
 
-1. 到 [Releases](https://github.com/zhenbai123/kuaida-chatbao-alternative/releases/latest) 下载 `Kuaida-v1.7.2-Windows-x64.zip`。
+1. 到 [Releases](https://github.com/zhenbai123/kuaida-chatbao-alternative/releases/latest) 下载 `Kuaida-v1.7.3-Windows-x64.zip`。
 2. 完整解压到固定且可写的目录，例如 `D:\Apps\Kuaida`，不要在压缩包内直接运行。
 3. 双击 `QuickReplyLite.exe`，无需激活码。系统需要 **.NET Framework 4.8**。
 4. 新建分类和话术，先点击目标聊天输入框，再使用左侧箭头或双击话术。
