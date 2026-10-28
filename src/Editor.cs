@@ -31,6 +31,12 @@ namespace QuickReplyLite
 
     internal sealed class PhraseEditor : Form
     {
+        private sealed class SequenceItem
+        {
+            internal DeliveryStep Step;
+            internal string Label;
+            public override string ToString() { return Label; }
+        }
         private readonly LocalStore store;
         private Phrase original;
         private readonly ComboBox category = new ComboBox();
@@ -39,6 +45,12 @@ namespace QuickReplyLite
         private readonly ListBox files = new ListBox();
         private readonly Label hint = new Label();
         private readonly FlowLayoutPanel colors = new FlowLayoutPanel();
+        private readonly CheckBox ordered = new CheckBox();
+        private readonly ListBox sequence = new ListBox();
+        private readonly Label sequenceTitle = new Label();
+        private readonly Label sequenceNote = new Label();
+        private readonly ToolTip compositionTips = new ToolTip();
+        private bool loadingDraft;
         private bool inlineMode;
         private readonly Label bodyLabel = new Label();
         private string colorHex = "#2878D0";
@@ -46,16 +58,16 @@ namespace QuickReplyLite
 
         public PhraseEditor(LocalStore value, Phrase phrase, string selectedCategory)
         {
-            store = value; original = phrase; inlineMode = phrase != null && phrase.InlineAttachments;
+            store = value; original = phrase; inlineMode = phrase == null || phrase.InlineAttachments; loadingDraft = true;
             Text = phrase == null ? "新建话术" : "修改话术";
             Icon = Program.ApplicationIcon;
-            Font = new Font("Microsoft YaHei UI", 9F); Size = new Size(720, 700); MinimumSize = new Size(620, 620);
+            Font = new Font("Microsoft YaHei UI", 9F); Size = new Size(920, 730); MinimumSize = new Size(760, 620);
             StartPosition = FormStartPosition.CenterParent; MaximizeBox = false; MinimizeBox = false; BackColor = Color.FromArgb(248, 249, 251);
             AutoScaleMode = AutoScaleMode.Dpi; AutoScaleDimensions = new SizeF(96, 96);
             TableLayoutPanel layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(16, 10, 16, 12), ColumnCount = 1, RowCount = 7 };
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 58)); layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 80));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 27)); layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 50)); layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36)); layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 132));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 51)); Controls.Add(layout);
 
@@ -71,15 +83,43 @@ namespace QuickReplyLite
             tagRow.Controls.Add(Field("关键词（可不填）", keyword), 0, 0);
             colors.Dock = DockStyle.Fill; colors.WrapContents = false; colors.AutoScroll = true;
             tagRow.Controls.Add(Field("关键词底色", colors), 1, 0); layout.Controls.Add(tagRow, 0, 1);
-            bodyLabel.Text = inlineMode ? "正文中的 #图1# 对应附件1，发送时按标记插入图片/文件" : "话术文字（可以换行，也可以只添加附件）";
-            bodyLabel.Dock = DockStyle.Fill; bodyLabel.TextAlign = ContentAlignment.MiddleLeft; layout.Controls.Add(bodyLabel, 0, 2);
+            TableLayoutPanel orderBar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = Padding.Empty };
+            orderBar.RowStyles.Add(new RowStyle(SizeType.Absolute, 25)); orderBar.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            ordered.Text = "按正文位置逐条发送文字、图片和文件"; ordered.AutoSize = true; ordered.Checked = inlineMode;
+            ordered.AccessibleName = "按正文位置逐条发送";
+            ordered.CheckedChanged += delegate
+            {
+                if (!ordered.Checked && inlineMode && !loadingDraft)
+                {
+                    loadingDraft = true;
+                    try { body.Text = PhraseContent.PlainText(DraftPhrase()); hint.Text = "已取消穿插位置，改为先发整段文字，再发送全部附件。"; }
+                    finally { loadingDraft = false; }
+                }
+                inlineMode = ordered.Checked; UpdateSequence();
+            };
+            orderBar.Controls.Add(ordered, 0, 0);
+            bodyLabel.Text = "在文字间插入附件；也可剪切标记调整位置。";
+            bodyLabel.Dock = DockStyle.Fill; bodyLabel.TextAlign = ContentAlignment.MiddleLeft; orderBar.Controls.Add(bodyLabel, 0, 1); layout.Controls.Add(orderBar, 0, 2);
             body.Multiline = true; body.AcceptsReturn = true; body.ScrollBars = ScrollBars.Vertical; body.MaxLength = 50000; body.Dock = DockStyle.Fill;
-            body.AccessibleName = "话术文字"; layout.Controls.Add(body, 0, 3);
+            body.AccessibleName = "话术文字，可在光标处插入图片或文件";
+            body.TextChanged += delegate { UpdateSequence(); };
+            TableLayoutPanel composition = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
+            composition.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 58)); composition.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42));
+            composition.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); composition.Controls.Add(body, 0, 0);
+            TableLayoutPanel previewPanel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Margin = new Padding(8, 0, 0, 0) };
+            previewPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 24)); previewPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); previewPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 51));
+            sequenceTitle.Dock = DockStyle.Fill; sequenceTitle.TextAlign = ContentAlignment.MiddleLeft;
+            sequence.Dock = DockStyle.Fill; sequence.IntegralHeight = false; sequence.DrawMode = DrawMode.OwnerDrawFixed; sequence.ItemHeight = 64;
+            sequence.AccessibleName = "发送顺序预览，从上到下依次发送"; sequence.DrawItem += DrawSequence;
+            sequenceNote.Dock = DockStyle.Fill; sequenceNote.ForeColor = Color.DimGray;
+            previewPanel.Controls.Add(sequenceTitle, 0, 0); previewPanel.Controls.Add(sequence, 0, 1); previewPanel.Controls.Add(sequenceNote, 0, 2);
+            composition.Controls.Add(previewPanel, 1, 0); layout.Controls.Add(composition, 0, 3);
 
             FlowLayoutPanel fileBar = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Padding = new Padding(0, 3, 0, 0) };
             Button add = new Button { Text = "＋ 图片 / 文件", AutoSize = true, Height = 27 };
             Button remove = new Button { Text = "移除选中", AutoSize = true, Height = 27 };
             Button preview = new Button { Text = "预览图片", AutoSize = true, Height = 27, Enabled = false };
+            Button insert = new Button { Text = "插入到光标处", AutoSize = true, Height = 27, Enabled = false };
             Label fileNote = new Label { Text = "最多9个，支持拖入", AutoSize = true, Margin = new Padding(8, 6, 0, 0), ForeColor = Color.DimGray };
             add.Click += delegate { using (OpenFileDialog dialog = new OpenFileDialog { Multiselect = true, Title = "添加本地图片或文件", CheckFileExists = true, Filter = "所有文件|*.*|图片|*.png;*.jpg;*.jpeg;*.bmp;*.gif" }) if (dialog.ShowDialog(this) == DialogResult.OK) AddFiles(dialog.FileNames); };
             remove.Click += delegate
@@ -89,12 +129,16 @@ namespace QuickReplyLite
                 if (inlineMode) body.Text = PhraseContent.RemoveAttachmentMarker(body.Text, index + 1);
                 ((DraftFile)files.Items[index]).Dispose(); files.Items.RemoveAt(index);
                 if (files.Items.Count > 0) files.SelectedIndex = Math.Min(index, files.Items.Count - 1);
+                UpdateSequence();
             };
             preview.Click += delegate { PreviewSelectedImage(); };
-            fileBar.Controls.AddRange(new Control[] { add, remove, preview, fileNote }); layout.Controls.Add(fileBar, 0, 4);
+            insert.Click += delegate { InsertSelectedAttachment(); };
+            compositionTips.SetToolTip(insert, "先在正文点击插入位置，再选择下面的附件。已有该附件标记时移到光标处；需要重复发送时可复制标记。");
+            compositionTips.SetToolTip(ordered, "勾选后，箭头发送会按右侧顺序逐条发送。取消会移除正文中的位置标记，改为整段文字和附件。");
+            fileBar.Controls.AddRange(new Control[] { add, insert, remove, preview, fileNote }); layout.Controls.Add(fileBar, 0, 4);
             files.Dock = DockStyle.Fill; files.IntegralHeight = false; files.AccessibleName = "关联图片和文件，可查看缩略图并双击预览";
             files.DrawMode = DrawMode.OwnerDrawFixed; files.ItemHeight = 64; files.DrawItem += DrawFile;
-            files.SelectedIndexChanged += delegate { DraftFile file = files.SelectedItem as DraftFile; preview.Enabled = file != null && ImagePreviewForm.CanPreview(file.Name); };
+            files.SelectedIndexChanged += delegate { DraftFile file = files.SelectedItem as DraftFile; preview.Enabled = file != null && ImagePreviewForm.CanPreview(file.Name); insert.Enabled = file != null; };
             files.MouseDoubleClick += delegate(object sender, MouseEventArgs e) { if (files.IndexFromPoint(e.Location) >= 0) PreviewSelectedImage(); };
             files.KeyDown += delegate(object sender, KeyEventArgs e) { if (e.KeyCode == Keys.Enter) { PreviewSelectedImage(); e.SuppressKeyPress = true; } };
             layout.Controls.Add(files, 0, 5);
@@ -114,7 +158,7 @@ namespace QuickReplyLite
             Button cancel = new Button { Text = "取消", Width = 70, Height = 29, DialogResult = DialogResult.Cancel };
             foreach (Button action in new[] { saveNew, save, cancel }) action.Margin = new Padding(3, 0, 3, 0);
             save.Click += delegate { if (SavePhrase()) { DialogResult = DialogResult.OK; Close(); } };
-            saveNew.Click += delegate { if (SavePhrase()) { original = null; inlineMode = false; bodyLabel.Text = "话术文字（可以换行，也可以只添加附件）"; keyword.Clear(); body.Clear(); ClearFiles(); Text = "新建话术"; hint.Text = "已保存，可继续新建。"; body.Focus(); } };
+            saveNew.Click += delegate { if (SavePhrase()) { loadingDraft = true; original = null; inlineMode = true; ordered.Checked = true; keyword.Clear(); body.Clear(); ClearFiles(); loadingDraft = false; UpdateSequence(); Text = "新建话术"; hint.Text = "已保存，可继续新建。"; body.Focus(); } };
             actions.Controls.AddRange(new Control[] { saveNew, save, cancel }); footer.Controls.Add(actions, 1, 0); layout.Controls.Add(footer, 0, 6);
             CancelButton = cancel;
             if (phrase != null)
@@ -122,8 +166,9 @@ namespace QuickReplyLite
                 keyword.Text = phrase.Keyword; body.Text = phrase.Text; colorHex = phrase.ColorHex ?? "";
                 foreach (Attachment item in phrase.Attachments) files.Items.Add(new DraftFile { Name = item.Name, Existing = item });
             }
-            Shown += delegate { DialogSizing.FitWorkingArea(this); RenderColors(); files.ItemHeight = (int)Math.Round(64 * DeviceDpi / 96.0); if (files.Items.Count > 0) files.SelectedIndex = 0; body.Focus(); };
-            FormClosed += delegate { ClearFiles(); };
+            loadingDraft = false; UpdateSequence();
+            Shown += delegate { DialogSizing.FitWorkingArea(this); RenderColors(); files.ItemHeight = sequence.ItemHeight = (int)Math.Round(64 * DeviceDpi / 96.0); if (files.Items.Count > 0) files.SelectedIndex = 0; body.Focus(); };
+            FormClosed += delegate { ClearFiles(); compositionTips.Dispose(); };
         }
 
         private Control Field(string label, Control input)
@@ -161,9 +206,10 @@ namespace QuickReplyLite
             else TextRenderer.DrawText(e.Graphics, ImagePreviewForm.CanPreview(file.Name) ? "无预览" : "文件", Font, thumb, Color.Gray, TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter);
             int left = thumb.Right + (int)(10 * scale);
             Rectangle name = new Rectangle(left, e.Bounds.Top + (int)(6 * scale), Math.Max(0, e.Bounds.Right - left - 8), Font.Height + (int)(6 * scale));
-            TextRenderer.DrawText(e.Graphics, file.Name, Font, name, Color.FromArgb(35, 35, 35), TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine | TextFormatFlags.VerticalCenter);
+            TextRenderer.DrawText(e.Graphics, (e.Index + 1) + ". " + file.Name, Font, name, Color.FromArgb(35, 35, 35), TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine | TextFormatFlags.VerticalCenter);
             Rectangle note = new Rectangle(left, name.Bottom, name.Width, Font.Height + (int)(8 * scale));
-            TextRenderer.DrawText(e.Graphics, image != null ? "双击放大预览" : ImagePreviewForm.CanPreview(file.Name) ? "图片缺失或格式无法预览" : "附件将按原文件发送", Font, note, Color.DimGray, TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine | TextFormatFlags.VerticalCenter);
+            string marker = "#" + (ImagePreviewForm.CanPreview(file.Name) ? "图" : "文件") + (e.Index + 1) + "#";
+            TextRenderer.DrawText(e.Graphics, marker + (image != null ? " · 双击放大预览" : ImagePreviewForm.CanPreview(file.Name) ? " · 图片缺失或无法预览" : " · 按原文件发送"), Font, note, Color.DimGray, TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine | TextFormatFlags.VerticalCenter);
             using (Pen pen = new Pen(Color.FromArgb(230, 233, 238))) e.Graphics.DrawLine(pen, e.Bounds.Left, e.Bounds.Bottom - 1, e.Bounds.Right, e.Bounds.Bottom - 1);
             if (selected) e.DrawFocusRectangle();
         }
@@ -174,6 +220,88 @@ namespace QuickReplyLite
             if (file == null || !ImagePreviewForm.CanPreview(file.Name)) return;
             try { using (ImagePreviewForm preview = new ImagePreviewForm(file.PathIn(store), file.Name)) preview.ShowDialog(this); }
             catch (Exception error) { MessageBox.Show(this, "无法预览图片：" + error.Message, "图片预览"); }
+        }
+
+        private Phrase DraftPhrase()
+        {
+            return new Phrase { Text = body.Text, InlineAttachments = inlineMode,
+                Attachments = files.Items.Cast<DraftFile>().Select(f => new Attachment { Name = f.Name }).ToList() };
+        }
+
+        private void UpdateSequence()
+        {
+            if (loadingDraft || IsDisposed) return;
+            sequence.BeginUpdate(); sequence.Items.Clear();
+            try
+            {
+                Phrase draft = DraftPhrase(); List<DeliveryStep> steps = DeliveryPlan.Build(draft, DeliveryMode.Send);
+                foreach (DeliveryStep step in steps)
+                {
+                    string label = step.AttachmentIndices.Length == 0 ? "文字：" + step.Text : String.Join("、", step.AttachmentIndices.Select(i => ((DraftFile)files.Items[i]).Name));
+                    sequence.Items.Add(new SequenceItem { Step = step, Label = (sequence.Items.Count + 1) + ". " + label });
+                }
+                sequenceTitle.Text = "发送顺序预览 · " + steps.Count + " 步"; sequenceNote.ForeColor = Color.DimGray;
+                if (!inlineMode) sequenceNote.Text = "先发整段文字，再一起发送附件。勾选上方选项后可穿插发送。";
+                else
+                {
+                    HashSet<int> placed = new HashSet<int>();
+                    foreach (System.Text.RegularExpressions.Match match in PhraseContent.Marker.Matches(body.Text)) placed.Add(Int32.Parse(match.Groups["index"].Value));
+                    int unplaced = files.Items.Count - placed.Count;
+                    sequenceNote.Text = (unplaced > 0 ? unplaced + " 个未插入的附件排在最后。" : "从上到下依次发送。") + "主窗口需勾选「回车发送」；双击只粘贴，不分段。";
+                }
+            }
+            catch (Exception error) { sequenceTitle.Text = "发送顺序有误"; sequenceNote.ForeColor = Color.DarkRed; sequenceNote.Text = error.Message; }
+            finally { sequence.EndUpdate(); }
+        }
+
+        private void DrawSequence(object sender, DrawItemEventArgs e)
+        {
+            if (e.Index < 0 || e.Index >= sequence.Items.Count) return;
+            DeliveryStep step = ((SequenceItem)sequence.Items[e.Index]).Step;
+            bool selected = (e.State & DrawItemState.Selected) != 0;
+            e.Graphics.FillRectangle(selected ? SystemBrushes.Highlight : Brushes.White, e.Bounds);
+            Color ink = selected ? SystemColors.HighlightText : Color.FromArgb(35, 35, 35);
+            int pad = (int)(6 * DeviceDpi / 96F), numberWidth = (int)(29 * DeviceDpi / 96F);
+            Rectangle number = new Rectangle(e.Bounds.Left + pad, e.Bounds.Top + pad, numberWidth, e.Bounds.Height - 2 * pad);
+            TextRenderer.DrawText(e.Graphics, (e.Index + 1).ToString("00"), Font, number, selected ? ink : Color.FromArgb(40, 120, 208), TextFormatFlags.NoPrefix);
+            Rectangle content = new Rectangle(number.Right, e.Bounds.Top + pad, Math.Max(1, e.Bounds.Right - number.Right - pad), e.Bounds.Height - 2 * pad);
+            if (step.AttachmentIndices.Length == 0)
+                TextRenderer.DrawText(e.Graphics, "文字\r\n" + PreviewText.Wrap(step.Text, Math.Max(5, content.Width / Font.Height), 2), Font, content, ink, TextFormatFlags.NoPrefix | TextFormatFlags.WordBreak | TextFormatFlags.EndEllipsis);
+            else
+            {
+                int index = step.AttachmentIndices[0]; DraftFile file = (DraftFile)files.Items[index]; Bitmap image = file.Thumbnail(store);
+                Rectangle thumbnail = new Rectangle(content.Left, content.Top, content.Height, content.Height);
+                e.Graphics.FillRectangle(Brushes.WhiteSmoke, thumbnail);
+                if (image != null)
+                {
+                    double ratio = Math.Min((double)thumbnail.Width / image.Width, (double)thumbnail.Height / image.Height);
+                    int width = Math.Max(1, (int)(image.Width * ratio)), height = Math.Max(1, (int)(image.Height * ratio));
+                    e.Graphics.DrawImage(image, thumbnail.Left + (thumbnail.Width - width) / 2, thumbnail.Top + (thumbnail.Height - height) / 2, width, height);
+                }
+                else TextRenderer.DrawText(e.Graphics, "文件", Font, thumbnail, Color.DimGray, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+                Rectangle description = new Rectangle(thumbnail.Right + pad, content.Top, Math.Max(1, content.Right - thumbnail.Right - pad), content.Height);
+                string kind = step.AttachmentIndices.Length > 1 ? "一起发送 " + step.AttachmentIndices.Length + " 个附件" : (ImagePreviewForm.CanPreview(file.Name) ? "图片 " : "文件 ") + (index + 1);
+                TextRenderer.DrawText(e.Graphics, kind + "\r\n" + file.Name, Font, description, ink, TextFormatFlags.NoPrefix | TextFormatFlags.WordBreak | TextFormatFlags.EndEllipsis);
+            }
+            using (Pen line = new Pen(Color.FromArgb(230, 233, 238))) e.Graphics.DrawLine(line, e.Bounds.Left, e.Bounds.Bottom - 1, e.Bounds.Right, e.Bounds.Bottom - 1);
+            if (selected) e.DrawFocusRectangle();
+        }
+
+        private void InsertSelectedAttachment()
+        {
+            if (files.SelectedIndex < 0) return;
+            try
+            {
+                int index = files.SelectedIndex, caret;
+                DraftFile file = (DraftFile)files.Items[index];
+                string text = PhraseContent.PlaceAttachment(body.Text, body.SelectionStart, index + 1, ImagePreviewForm.CanPreview(file.Name), out caret);
+                if (text.Length > body.MaxLength) throw new InvalidOperationException("正文最多50000字，请缩短后再插入。");
+                loadingDraft = true;
+                try { ordered.Checked = true; inlineMode = true; body.Text = text; body.Select(caret, 0); }
+                finally { loadingDraft = false; UpdateSequence(); }
+                hint.Text = "已将附件 " + (index + 1) + " 放到光标处；在右侧核对顺序。"; body.Focus();
+            }
+            catch (Exception error) { hint.Text = error.Message; }
         }
 
         private void RenderColors()
@@ -203,14 +331,20 @@ namespace QuickReplyLite
                     string full = Path.GetFullPath(file); if (existing.Add(full)) incoming.Add(full);
                 }
                 if (files.Items.Count + incoming.Count > 9) throw new InvalidOperationException("每条话术最多添加9个图片或文件。");
+                string text = body.Text; int caret = body.SelectionStart, next = files.Items.Count;
+                if (inlineMode)
+                    foreach (string file in incoming) text = PhraseContent.PlaceAttachment(text, caret, ++next, ImagePreviewForm.CanPreview(file), out caret);
+                if (text.Length > body.MaxLength) throw new InvalidOperationException("正文最多50000字，请缩短后再添加附件。");
+                loadingDraft = true;
                 foreach (string file in incoming)
                 {
                     files.Items.Add(new DraftFile { Name = Path.GetFileName(file), Source = file });
-                    if (inlineMode) body.AppendText((body.Text.Length == 0 ? "" : Environment.NewLine) + "#" + (ImagePreviewForm.CanPreview(file) ? "图" : "文件") + files.Items.Count + "#");
                 }
+                if (inlineMode) { body.Text = text; body.Select(caret, 0); }
                 if (incoming.Count > 0) files.SelectedIndex = files.Items.Count - 1;
             }
             catch (Exception error) { MessageBox.Show(this, error.Message, "添加附件"); }
+            finally { loadingDraft = false; UpdateSequence(); }
         }
 
         private bool SavePhrase()
@@ -221,6 +355,7 @@ namespace QuickReplyLite
             Phrase updated = null;
             try
             {
+                PhraseContent.Build(DraftPhrase());
                 updated = new Phrase { Id = previous == null ? Guid.NewGuid().ToString("N") : previous.Id, CategoryId = (string)category.SelectedValue, Keyword = keyword.Text.Trim(), ColorHex = colorHex, Text = body.Text, InlineAttachments = inlineMode };
                 foreach (DraftFile file in files.Items)
                 {

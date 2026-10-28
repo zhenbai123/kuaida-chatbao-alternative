@@ -12,8 +12,8 @@ using System.Windows.Forms;
 
 [assembly: System.Reflection.AssemblyTitle("快答·开源版（免激活）")]
 [assembly: System.Reflection.AssemblyDescription("本地话术与图片文件一键发送悬浮窗")]
-[assembly: System.Reflection.AssemblyVersion("1.7.3.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.7.3.0")]
+[assembly: System.Reflection.AssemblyVersion("1.8.0.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.8.0.0")]
 
 namespace QuickReplyLite
 {
@@ -164,7 +164,7 @@ namespace QuickReplyLite
             bar.Controls.Add(pin); bar.Controls.Add(locked); bar.Controls.Add(autoSend); phraseArea.Controls.Add(bar, 0, 0);
             tooltip.SetToolTip(pin, "保持悬浮窗在其他窗口上方");
             tooltip.SetToolTip(locked, "锁定窗口位置和大小，取消勾选后可拖动");
-            tooltip.SetToolTip(autoSend, "勾选：粘贴后按 Enter，保留导入话术的图文顺序；取消：只粘贴文字和附件，由你发送");
+            tooltip.SetToolTip(autoSend, "勾选：按话术设置的文字、图片和文件顺序逐步发送；取消：合并文字和附件仅粘贴，不分段、不回车");
             pin.CheckedChanged += delegate { TopMost = pin.Checked; SavePreferences(); };
             locked.CheckedChanged += delegate { SavePreferences(); };
             autoSend.CheckedChanged += delegate { SavePreferences(); };

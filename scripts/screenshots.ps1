@@ -10,6 +10,6 @@ if ($LASTEXITCODE -ne 0) { throw 'Screenshot harness compilation failed.' }
 Copy-Item 'QuickReplyLite.exe.config' 'artifacts/Screenshots.exe.config' -Force
 & ./artifacts/Screenshots.exe (Join-Path (Get-Location) 'docs/screenshots')
 if ($LASTEXITCODE -ne 0) { throw 'Screenshot harness failed.' }
-foreach ($name in @('main','editor','batch-replace','import')) {
+foreach ($name in @('main','editor','batch-replace','import','composition')) {
     if (-not (Test-Path "docs/screenshots/$name.png")) { throw "Missing screenshot: $name" }
 }

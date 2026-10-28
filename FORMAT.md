@@ -45,4 +45,6 @@ v1.4统一导出外层`Version: 3`、内层`Library.Version: 2`，新增`Boards`
 
 本地`话术.json`也使用`Version: 2`。打开无板块字段的旧`Version: 1`数据时，先将分类归入个人，保存原始JSON升级前备份，再原子写入新版数据。窗口设置增加`ActiveBoardId`、`CategoryPanelHeight`，仅保存在本机，导入保留接收方的设置。
 
+v1.8.0 编辑器支持在光标处放置图片/文件标记，并按实际 `DeliveryPlan` 显示步骤预览。新建话术默认 `InlineAttachments: true`，已有话术保留原设置；选择附件重新放置时移动该附件的已有标记，防止意外重复发送。显式复制的重复标记仍按重复位置发送。单条最多64个发送步骤（包括末尾文字和未标记附件）。数据和话术包版本不变，旧版仍能读取相同的混排顺序。仅粘贴模式合并正文、一次放入附件，不产生 Enter 指令。
+
 该格式为快答自己的公开格式；聊天宝 `.bangkefu` 的兼容读取见 [BANGKEFU-FORMAT.md](BANGKEFU-FORMAT.md)。

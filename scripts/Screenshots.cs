@@ -48,7 +48,8 @@ namespace QuickReplyLite
                 LibraryTransfer.ExportPackage(store, package, "");
                 using (ImportedLibrary incoming = LibraryTransfer.Load(package))
                 using (ImportLibraryForm import = new ImportLibraryForm(store, incoming, Board.PersonalId)) Capture(import, output, "import");
-                Console.WriteLine("Generated four real WinForms window images with demonstration data.");
+                CheckComposition(store, temporary, output);
+                Console.WriteLine("Generated five real WinForms window images with demonstration data.");
                 return 0;
             }
             catch (Exception error) { Console.Error.WriteLine(error); return 1; }
@@ -57,6 +58,59 @@ namespace QuickReplyLite
 
         private static T Field<T>(object instance, string name) where T : class
         { return (T)instance.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic).GetValue(instance); }
+
+        private static void Assert(bool value, string message)
+        { if (!value) throw new InvalidOperationException(message); Console.WriteLine("PASS Windows composition: " + message); }
+
+        private static object InvokeEditor(PhraseEditor editor, string method, params object[] arguments)
+        { return typeof(PhraseEditor).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic).Invoke(editor, arguments); }
+
+        private static Button FindButton(Control parent, string text)
+        {
+            foreach (Control child in parent.Controls)
+            { Button button = child as Button; if (button != null && button.Text == text) return button; Button nested = FindButton(child, text); if (nested != null) return nested; }
+            return null;
+        }
+
+        private static void CheckComposition(LocalStore demo, string temporary, string output)
+        {
+            LocalStore store = new LocalStore(Path.Combine(temporary, "sequence-data"));
+            string first = Path.Combine(temporary, "第一张图.png"), second = Path.Combine(temporary, "第二张图.png"), file = Path.Combine(temporary, "详细资料.txt");
+            File.Copy(demo.Resolve(demo.Data.Phrases[1].Attachments[0]), first);
+            using (Bitmap image = new Bitmap(320, 180)) using (Graphics graphics = Graphics.FromImage(image))
+            using (Font font = new Font("Microsoft YaHei UI", 20))
+            { graphics.Clear(Color.FromArgb(232, 249, 239)); graphics.DrawString("第二张示意图", font, Brushes.SeaGreen, 30, 60); image.Save(second, ImageFormat.Png); }
+            File.WriteAllText(file, "演示文件内容，不会发送消息。");
+            string expected = "先看这张图。#图1#再看第二张图。#图2#最后查看资料。#文件3#";
+            Phrase saved;
+            using (PhraseEditor editor = new PhraseEditor(store, null, store.Data.Categories[0].Id))
+            {
+                editor.Size = new Size(920, 960); editor.Show(); Pump();
+                TextBox body = Field<TextBox>(editor, "body"); ListBox files = Field<ListBox>(editor, "files"), sequence = Field<ListBox>(editor, "sequence"); CheckBox ordered = Field<CheckBox>(editor, "ordered");
+                Assert(ordered.Checked, "new phrases expose ordered composition by default");
+                body.Text = "先看这张图。再看第二张图。最后查看资料。"; body.Select(body.Text.IndexOf("再看", StringComparison.Ordinal), 0);
+                InvokeEditor(editor, "AddFiles", (object)new[] { first, second, file });
+                Assert(files.Items.Count == 3 && body.Text.Contains("#图1##图2##文件3#"), "adding multiple images and a file inserts numbered references at the chosen caret");
+                files.SelectedIndex = 1; body.Select(body.Text.IndexOf("最后查看", StringComparison.Ordinal), 0); FindButton(editor, "插入到光标处").PerformClick();
+                files.SelectedIndex = 2; body.Select(body.TextLength, 0); FindButton(editor, "插入到光标处").PerformClick();
+                Assert(body.Text == expected && sequence.Items.Count == 6 && sequence.Items[1].ToString().Contains("第一张图") && sequence.Items[5].ToString().Contains("详细资料"), "insertion controls produce text-image-text-image-text-file and six matching preview steps");
+                ordered.Checked = false;
+                Assert(!PhraseContent.Marker.IsMatch(body.Text) && sequence.Items.Count == 2 && body.Text == "先看这张图。再看第二张图。最后查看资料。", "turning off composition removes position markers while preserving all text and attachments");
+                ordered.Checked = true; body.Text = expected; body.Select(0, 0);
+                Assert((bool)InvokeEditor(editor, "SavePhrase"), "the composed phrase saves through the real editor");
+                saved = store.Data.Phrases.Last();
+                Assert(saved.InlineAttachments && saved.Text == expected && DeliveryPlan.Build(saved, DeliveryMode.Send).Count == sequence.Items.Count, "saved delivery plan has exactly the same order and step count as the preview");
+                Capture(editor, output, "composition");
+            }
+            using (PhraseEditor editor = new PhraseEditor(store, saved, saved.CategoryId))
+            {
+                editor.Show(); Pump(); ListBox files = Field<ListBox>(editor, "files"); files.SelectedIndex = 0;
+                FindButton(editor, "移除选中").PerformClick();
+                Assert(Field<TextBox>(editor, "body").Text == "先看这张图。再看第二张图。#图1#最后查看资料。#文件2#" && Field<ListBox>(editor, "sequence").Items.Count == 4, "removing an attachment refreshes preview and renumbers mixed image/file references");
+                editor.Close();
+            }
+            Assert(store.Data.Phrases.Last().Text == expected && new LocalStore(store.Folder).Data.Phrases.Last().Text == expected, "cancelling a draft does not change the saved or reopened composition");
+        }
 
         private static void Pump()
         { for (int i = 0; i < 6; i++) { Application.DoEvents(); Thread.Sleep(60); } }

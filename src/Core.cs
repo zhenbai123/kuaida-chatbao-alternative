@@ -80,7 +80,26 @@ namespace QuickReplyLite
                 string tail = phrase.Text.Substring(start); if (!String.IsNullOrWhiteSpace(tail)) result.Add(new SendPart { Text = tail, AttachmentIndex = -1 });
             }
             for (int i = 0; i < phrase.Attachments.Count; i++) if (!used.Contains(i)) result.Add(new SendPart { AttachmentIndex = i });
+            if (result.Count > 64) throw new InvalidDataException("单条话术的图文分段过多，最多64步。");
             return result;
+        }
+        public static string PlaceAttachment(string text, int position, int oneBasedIndex, bool image, out int caret)
+        {
+            if (text == null) throw new ArgumentNullException("text");
+            if (position < 0 || position > text.Length || oneBasedIndex < 1 || oneBasedIndex > 9) throw new ArgumentOutOfRangeException();
+            foreach (Match match in Marker.Matches(text))
+                if (position > match.Index && position < match.Index + match.Length) { position = match.Index + match.Length; break; }
+            int adjusted = position;
+            string remaining = Marker.Replace(text, delegate(Match match)
+            {
+                int index;
+                if (!Int32.TryParse(match.Groups["index"].Value, out index) || index != oneBasedIndex) return match.Value;
+                if (match.Index < position) adjusted -= Math.Min(match.Length, position - match.Index);
+                return "";
+            });
+            string marker = "#" + (image ? "图" : "文件") + oneBasedIndex + "#";
+            caret = adjusted + marker.Length;
+            return remaining.Insert(adjusted, marker);
         }
         public static string RemoveAttachmentMarker(string text, int oneBasedIndex)
         {

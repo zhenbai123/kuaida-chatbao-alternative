@@ -39,9 +39,63 @@ internal static class InteractionTests
         plan = DeliveryPlan.Build(phrase, DeliveryMode.PasteOnly);
         check(plan.Count == 1 && plan[0].Text == phrase.Text && !plan[0].PressEnter && plan[0].AttachmentIndices.Length == 0, "text-only double click preserves original text and newlines while leaving sending to the user");
 
+        Composition(Path.Combine(root, "composition"), check);
+
         Boards(Path.Combine(root, "boards"), check);
         Migration(Path.Combine(root, "migration"), check);
         Transfer(Path.Combine(root, "board-transfer"), check);
+    }
+
+    private static void Composition(string root, Action<bool, string> check)
+    {
+        Directory.CreateDirectory(root); int caret;
+        string text = PhraseContent.PlaceAttachment("开头结尾", 2, 1, true, out caret);
+        check(text == "开头#图1#结尾" && caret == 6, "a selected image can be inserted at the body caret without replacing surrounding text");
+        text = PhraseContent.PlaceAttachment(text, caret, 2, false, out caret);
+        text = PhraseContent.PlaceAttachment(text, text.Length, 3, true, out caret);
+        check(text == "开头#图1##文件2#结尾#图3#" && caret == text.Length, "mixed images and files share explicit attachment numbers and preserve the chosen insertion order");
+        string moved = PhraseContent.PlaceAttachment(text, 0, 3, true, out caret);
+        check(moved == "#图3#开头#图1##文件2#结尾" && caret == 4, "placing an existing attachment moves its marker rather than causing an accidental duplicate send");
+        moved = PhraseContent.PlaceAttachment("甲#图1#乙#附件1#丙#文件2#丁", 12, 1, true, out caret);
+        check(moved == "甲乙丙#图1##文件2#丁" && caret == 7, "moving repeated references adjusts the caret after removing preceding markers and leaves other attachments untouched");
+        moved = PhraseContent.PlaceAttachment("前#图1#后", 3, 1, true, out caret);
+        check(moved == "前#图1#后" && caret == 5, "a caret inside the selected attachment marker remains valid when repositioned");
+        moved = PhraseContent.PlaceAttachment("前#图1#后", 3, 2, false, out caret);
+        check(moved == "前#图1##文件2#后", "inserting inside another attachment marker snaps after it instead of breaking the original reference");
+        Reject(delegate { PhraseContent.PlaceAttachment("正文", 3, 1, true, out caret); }, "attachment insertion rejects a caret outside the body", check);
+        Reject(delegate { PhraseContent.PlaceAttachment("正文", 0, 0, true, out caret); }, "attachment insertion rejects nonexistent zero attachment numbers", check);
+
+        LocalStore store = new LocalStore(Path.Combine(root, "Data"));
+        Phrase phrase = new Phrase { Id = "ordered", CategoryId = store.Data.Categories[0].Id, Keyword = "顺序", ColorHex = "#060606", InlineAttachments = true,
+            Text = "先看说明#图1#再看文件#文件2#最后一张#图3#结束" };
+        foreach (string name in new[] { "第一张.png", "资料.txt", "第二张.png" })
+        { string path = Path.Combine(root, name); File.WriteAllText(path, "test " + name); phrase.Attachments.Add(store.CopyAttachment(path)); }
+        var plan = DeliveryPlan.Build(phrase, DeliveryMode.Send);
+        check(plan.Select(s => s.AttachmentIndices.Length > 0 ? "a" + s.AttachmentIndices.Single() : s.Text).SequenceEqual(new[] { "先看说明", "a0", "再看文件", "a1", "最后一张", "a2", "结束" }) && plan.All(s => s.PressEnter),
+            "the actual send plan follows text-image-text-file-text-image-text exactly, without grouping or changing attachment order");
+        store.Data.Phrases.Clear(); store.Data.Phrases.Add(phrase); store.Save();
+        Phrase saved = new LocalStore(store.Folder).Data.Phrases.Single();
+        check(saved.InlineAttachments && saved.Text == phrase.Text && DeliveryPlan.Build(saved, DeliveryMode.Send).Select(s => s.Text).SequenceEqual(plan.Select(s => s.Text)), "local restart retains the composed body, markers and send sequence");
+        string output = Path.Combine(root, "sequence.quickreply"); LibraryTransfer.ExportPackage(store, output, "");
+        using (ImportedLibrary incoming = LibraryTransfer.Load(output))
+        {
+            Phrase restored = incoming.Library.Phrases.Single();
+            check(restored.Text == phrase.Text && restored.InlineAttachments && restored.Attachments.Select(a => a.Name).SequenceEqual(phrase.Attachments.Select(a => a.Name))
+                && DeliveryPlan.Build(restored, DeliveryMode.Send).SelectMany(s => s.AttachmentIndices).SequenceEqual(new[] { 0, 1, 2 }), "export and import preserve the exact composition with multiple images and a file");
+        }
+        var pasted = DeliveryPlan.Build(phrase, DeliveryMode.PasteOnly);
+        check(pasted.All(s => !s.PressEnter) && pasted.Count == 2 && pasted[0].Text == "先看说明再看文件最后一张结束" && pasted[1].AttachmentIndices.SequenceEqual(new[] { 0, 1, 2 }), "composed phrases still obey double-click paste-only behavior and never auto-submit");
+        phrase.Text = "#图3#文字#图1##图3#";
+        plan = DeliveryPlan.Build(phrase, DeliveryMode.Send);
+        check(plan.SelectMany(s => s.AttachmentIndices).SequenceEqual(new[] { 2, 0, 2, 1 }), "explicit out-of-order and repeated attachment positions are retained, with unplaced files visibly sent last");
+        string removed = PhraseContent.RemoveAttachmentMarker(phrase.Text, 1); phrase.Attachments.RemoveAt(0); phrase.Text = removed;
+        check(phrase.Text == "#图2#文字#图2#" && DeliveryPlan.Build(phrase, DeliveryMode.Send).SelectMany(s => s.AttachmentIndices).SequenceEqual(new[] { 1, 1, 0 }), "removing an attachment renumbers remaining mixed references while preserving their relative send order");
+        phrase.Attachments.RemoveAt(1); phrase.Text = String.Concat(Enumerable.Repeat("字#图1#", 32));
+        check(DeliveryPlan.Build(phrase, DeliveryMode.Send).Count == 64, "the sequence limit accepts exactly 64 text and attachment steps");
+        phrase.Text += "结尾";
+        Reject(delegate { DeliveryPlan.Build(phrase, DeliveryMode.Send); }, "a final text segment cannot bypass the 64-step sequence limit", check);
+        phrase.Text = String.Concat(Enumerable.Repeat("字#图1#", 32)); phrase.Attachments.Add(new Attachment { Name = "extra.txt", RelativePath = "素材/extra" });
+        Reject(delegate { DeliveryPlan.Build(phrase, DeliveryMode.Send); }, "unplaced trailing attachments also count toward the 64-step sequence limit", check);
     }
 
     private static void Boards(string root, Action<bool, string> check)
