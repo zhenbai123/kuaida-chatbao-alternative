@@ -49,6 +49,8 @@ namespace QuickReplyLite
         private readonly ListBox sequence = new ListBox();
         private readonly Label sequenceTitle = new Label();
         private readonly Label sequenceNote = new Label();
+        private readonly Button moveStepUp = new Button();
+        private readonly Button moveStepDown = new Button();
         private readonly ToolTip compositionTips = new ToolTip();
         private bool loadingDraft;
         private bool inlineMode;
@@ -111,10 +113,19 @@ namespace QuickReplyLite
             TableLayoutPanel previewPanel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Margin = new Padding(8, 0, 0, 0) };
             previewPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 24)); previewPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); previewPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 51));
             sequenceTitle.Dock = DockStyle.Fill; sequenceTitle.TextAlign = ContentAlignment.MiddleLeft;
+            TableLayoutPanel sequenceHeader = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, Margin = Padding.Empty };
+            sequenceHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); sequenceHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 49)); sequenceHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 49));
+            moveStepUp.Text = "上移"; moveStepDown.Text = "下移";
+            foreach (Button button in new[] { moveStepUp, moveStepDown }) { button.Dock = DockStyle.Fill; button.Margin = new Padding(1, 0, 1, 0); button.Enabled = false; }
+            moveStepUp.Click += delegate { MoveSelectedStep(-1); }; moveStepDown.Click += delegate { MoveSelectedStep(1); };
+            sequenceHeader.Controls.Add(sequenceTitle, 0, 0); sequenceHeader.Controls.Add(moveStepUp, 1, 0); sequenceHeader.Controls.Add(moveStepDown, 2, 0);
+            compositionTips.SetToolTip(moveStepUp, "选择下面的步骤再上移，正文同步调整；相邻文字会合并为一段。");
+            compositionTips.SetToolTip(moveStepDown, "选择下面的步骤再下移，正文同步调整；相邻文字会合并为一段。");
             sequence.Dock = DockStyle.Fill; sequence.IntegralHeight = false; sequence.DrawMode = DrawMode.OwnerDrawFixed; sequence.ItemHeight = 50;
             sequence.AccessibleName = "发送顺序预览，从上到下依次发送"; sequence.DrawItem += DrawSequence;
+            sequence.SelectedIndexChanged += delegate { UpdateStepButtons(); };
             sequenceNote.Dock = DockStyle.Fill; sequenceNote.ForeColor = Color.DimGray;
-            previewPanel.Controls.Add(sequenceTitle, 0, 0); previewPanel.Controls.Add(sequence, 0, 1); previewPanel.Controls.Add(sequenceNote, 0, 2);
+            previewPanel.Controls.Add(sequenceHeader, 0, 0); previewPanel.Controls.Add(sequence, 0, 1); previewPanel.Controls.Add(sequenceNote, 0, 2);
             composition.Controls.Add(previewPanel, 1, 0); composition.SetRowSpan(previewPanel, 3); layout.Controls.Add(composition, 0, 3); layout.SetRowSpan(composition, 3);
 
             FlowLayoutPanel fileBar = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Padding = new Padding(0, 3, 0, 0) };
@@ -233,6 +244,7 @@ namespace QuickReplyLite
         private void UpdateSequence()
         {
             if (loadingDraft || IsDisposed) return;
+            int selected = sequence.SelectedIndex;
             sequence.BeginUpdate(); sequence.Items.Clear();
             try
             {
@@ -242,6 +254,7 @@ namespace QuickReplyLite
                     string label = step.AttachmentIndices.Length == 0 ? "文字：" + step.Text : String.Join("、", step.AttachmentIndices.Select(i => ((DraftFile)files.Items[i]).Name));
                     sequence.Items.Add(new SequenceItem { Step = step, Label = (sequence.Items.Count + 1) + ". " + label });
                 }
+                if (selected >= 0 && sequence.Items.Count > 0) sequence.SelectedIndex = Math.Min(selected, sequence.Items.Count - 1);
                 sequenceTitle.Text = "发送顺序预览 · " + steps.Count + " 步"; sequenceNote.ForeColor = Color.DimGray;
                 if (!inlineMode) sequenceNote.Text = "先发整段文字，再一起发送附件。勾选上方选项后可穿插发送。";
                 else
@@ -253,7 +266,26 @@ namespace QuickReplyLite
                 }
             }
             catch (Exception error) { sequenceTitle.Text = "发送顺序有误"; sequenceNote.ForeColor = Color.DarkRed; sequenceNote.Text = error.Message; }
-            finally { sequence.EndUpdate(); }
+            finally { sequence.EndUpdate(); UpdateStepButtons(); }
+        }
+
+        private void UpdateStepButtons()
+        {
+            moveStepUp.Enabled = inlineMode && sequence.SelectedIndex > 0;
+            moveStepDown.Enabled = inlineMode && sequence.SelectedIndex >= 0 && sequence.SelectedIndex < sequence.Items.Count - 1;
+        }
+
+        private void MoveSelectedStep(int delta)
+        {
+            if (!inlineMode || sequence.SelectedIndex < 0) return;
+            try
+            {
+                int selected; string text = PhraseContent.MovePart(DraftPhrase(), sequence.SelectedIndex, delta, out selected);
+                body.Text = text;
+                if (selected >= 0 && selected < sequence.Items.Count) sequence.SelectedIndex = selected;
+                hint.Text = "发送顺序已调整，保存后生效；连续文字会合并为一段。";
+            }
+            catch (Exception error) { hint.Text = error.Message; }
         }
 
         private void DrawSequence(object sender, DrawItemEventArgs e)

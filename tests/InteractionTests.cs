@@ -70,6 +70,7 @@ internal static class InteractionTests
             Text = "先看说明#图1#再看文件#文件2#最后一张#图3#结束" };
         foreach (string name in new[] { "第一张.png", "资料.txt", "第二张.png" })
         { string path = Path.Combine(root, name); File.WriteAllText(path, "test " + name); phrase.Attachments.Add(store.CopyAttachment(path)); }
+        Reordering(phrase.Attachments, check);
         var plan = DeliveryPlan.Build(phrase, DeliveryMode.Send);
         check(plan.Select(s => s.AttachmentIndices.Length > 0 ? "a" + s.AttachmentIndices.Single() : s.Text).SequenceEqual(new[] { "先看说明", "a0", "再看文件", "a1", "最后一张", "a2", "结束" }) && plan.All(s => s.PressEnter),
             "the actual send plan follows text-image-text-file-text-image-text exactly, without grouping or changing attachment order");
@@ -96,6 +97,35 @@ internal static class InteractionTests
         Reject(delegate { DeliveryPlan.Build(phrase, DeliveryMode.Send); }, "a final text segment cannot bypass the 64-step sequence limit", check);
         phrase.Text = String.Concat(Enumerable.Repeat("字#图1#", 32)); phrase.Attachments.Add(new Attachment { Name = "extra.txt", RelativePath = "素材/extra" });
         Reject(delegate { DeliveryPlan.Build(phrase, DeliveryMode.Send); }, "unplaced trailing attachments also count toward the 64-step sequence limit", check);
+    }
+
+    private static void Reordering(System.Collections.Generic.List<Attachment> attachments, Action<bool, string> check)
+    {
+        Phrase phrase = new Phrase { Text = "开头#图1# \r\n#文件2#结尾", InlineAttachments = true, Attachments = attachments };
+        int selected;
+        string moved = PhraseContent.MovePart(phrase, 1, 1, out selected);
+        check(moved == "开头#文件2# \r\n#图1#结尾#附件3#" && selected == 2 && phrase.Text == "开头#图1# \r\n#文件2#结尾", "moving preview steps swaps adjacent image/file positions, preserves literal whitespace and does not mutate the source phrase");
+        Phrase draft = new Phrase { Text = moved, InlineAttachments = true, Attachments = attachments };
+        check(DeliveryPlan.Build(draft, DeliveryMode.Send).SelectMany(s => s.AttachmentIndices).SequenceEqual(new[] { 1, 0, 2 }), "a formerly unplaced attachment is materialized at its original trailing position when the sequence is edited");
+        moved = PhraseContent.MovePart(draft, selected, -1, out selected);
+        check(moved == "开头#图1# \r\n#文件2#结尾#附件3#" && selected == 1, "moving the selected step back restores its order and keeps selection on that step");
+        phrase.Text = "前#图1#后#文件2#";
+        moved = PhraseContent.MovePart(phrase, 1, 1, out selected);
+        check(moved == "前后#图1##文件2##附件3#" && selected == 1, "moving an image past text merges consecutive text in the preview without dropping or duplicating any content");
+        phrase.Text = "甲#图1#乙#图1#丙#文件2#";
+        moved = PhraseContent.MovePart(phrase, 3, 1, out selected);
+        draft.Text = moved;
+        check(selected == 3 && DeliveryPlan.Build(draft, DeliveryMode.Send).SelectMany(s => s.AttachmentIndices).SequenceEqual(new[] { 0, 0, 1, 2 }) && moved.Count(c => c == '甲') == 1 && moved.Count(c => c == '乙') == 1 && moved.Count(c => c == '丙') == 1,
+            "reordering a repeated image position edits only that occurrence and retains all text exactly once");
+        phrase.Text = "文字#图1#";
+        check(PhraseContent.MovePart(phrase, 0, -1, out selected) == phrase.Text && selected == 0, "moving the first step upward is a no-op without adding hidden markers");
+        check(PhraseContent.MovePart(phrase, 3, 1, out selected) == phrase.Text && selected == 3, "moving the last step downward is a no-op");
+        Reject(delegate { PhraseContent.MovePart(phrase, -1, 1, out selected); }, "sequence editing rejects nonexistent selected steps", check);
+        Reject(delegate { PhraseContent.MovePart(phrase, 1, 2, out selected); }, "sequence editing rejects unsupported movement directions", check);
+        phrase.InlineAttachments = false;
+        Reject(delegate { PhraseContent.MovePart(phrase, 0, 1, out selected); }, "grouped legacy phrases require explicit ordered mode before their sequence can be changed", check);
+        phrase.InlineAttachments = true; phrase.Text = new string('长', 49999);
+        Reject(delegate { PhraseContent.MovePart(phrase, 0, 1, out selected); }, "materializing unplaced files cannot push a reordered draft beyond the body size limit", check);
     }
 
     private static void Boards(string root, Action<bool, string> check)

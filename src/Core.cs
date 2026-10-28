@@ -52,6 +52,7 @@ namespace QuickReplyLite
     {
         public string Text { get; internal set; }
         public int AttachmentIndex { get; internal set; }
+        internal int SourceStart, SourceLength;
     }
 
     public static class PhraseContent
@@ -63,7 +64,7 @@ namespace QuickReplyLite
             List<SendPart> result = new List<SendPart>(); HashSet<int> used = new HashSet<int>();
             if (!phrase.InlineAttachments)
             {
-                if (!String.IsNullOrWhiteSpace(phrase.Text)) result.Add(new SendPart { Text = phrase.Text, AttachmentIndex = -1 });
+                if (!String.IsNullOrWhiteSpace(phrase.Text)) result.Add(new SendPart { Text = phrase.Text, AttachmentIndex = -1, SourceLength = phrase.Text.Length });
             }
             else
             {
@@ -73,13 +74,13 @@ namespace QuickReplyLite
                     int index;
                     if (!Int32.TryParse(match.Groups["index"].Value, out index) || index < 1 || index > phrase.Attachments.Count) throw new InvalidDataException("图片/文件标记没有对应附件，请检查 #图1# 等标记。");
                     string text = phrase.Text.Substring(start, match.Index - start);
-                    if (!String.IsNullOrWhiteSpace(text)) result.Add(new SendPart { Text = text, AttachmentIndex = -1 });
-                    result.Add(new SendPart { AttachmentIndex = index - 1 }); used.Add(index - 1); start = match.Index + match.Length;
+                    if (!String.IsNullOrWhiteSpace(text)) result.Add(new SendPart { Text = text, AttachmentIndex = -1, SourceStart = start, SourceLength = text.Length });
+                    result.Add(new SendPart { AttachmentIndex = index - 1, SourceStart = match.Index, SourceLength = match.Length }); used.Add(index - 1); start = match.Index + match.Length;
                     if (result.Count > 64) throw new InvalidDataException("单条话术的图文分段过多。");
                 }
-                string tail = phrase.Text.Substring(start); if (!String.IsNullOrWhiteSpace(tail)) result.Add(new SendPart { Text = tail, AttachmentIndex = -1 });
+                string tail = phrase.Text.Substring(start); if (!String.IsNullOrWhiteSpace(tail)) result.Add(new SendPart { Text = tail, AttachmentIndex = -1, SourceStart = start, SourceLength = tail.Length });
             }
-            for (int i = 0; i < phrase.Attachments.Count; i++) if (!used.Contains(i)) result.Add(new SendPart { AttachmentIndex = i });
+            for (int i = 0; i < phrase.Attachments.Count; i++) if (!used.Contains(i)) result.Add(new SendPart { AttachmentIndex = i, SourceStart = phrase.Text.Length });
             if (result.Count > 64) throw new InvalidDataException("单条话术的图文分段过多，最多64步。");
             return result;
         }
@@ -100,6 +101,28 @@ namespace QuickReplyLite
             string marker = "#" + (image ? "图" : "文件") + oneBasedIndex + "#";
             caret = adjusted + marker.Length;
             return remaining.Insert(adjusted, marker);
+        }
+        public static string MovePart(Phrase phrase, int index, int delta, out int selectedIndex)
+        {
+            if (!phrase.InlineAttachments) throw new InvalidOperationException("请先勾选按正文位置逐条发送。");
+            List<SendPart> parts = Build(phrase); selectedIndex = index;
+            if (index < 0 || index >= parts.Count || (delta != -1 && delta != 1)) throw new ArgumentOutOfRangeException();
+            if (index + delta < 0 || index + delta >= parts.Count) return phrase.Text;
+            // Materialize trailing, unplaced attachments before moving. The exact
+            // original text and whitespace remain intact when two source spans swap.
+            string text = phrase.Text + String.Concat(parts.Where(p => p.AttachmentIndex >= 0 && p.SourceLength == 0).Select(p => "#附件" + (p.AttachmentIndex + 1) + "#"));
+            if (text.Length > 50000) throw new InvalidDataException("正文最多50000字，请缩短后再调整顺序。");
+            Phrase complete = new Phrase { Text = text, InlineAttachments = true, Attachments = phrase.Attachments };
+            parts = Build(complete);
+            SendPart left = parts[Math.Min(index, index + delta)], right = parts[Math.Max(index, index + delta)];
+            int gapStart = left.SourceStart + left.SourceLength;
+            string gap = text.Substring(gapStart, right.SourceStart - gapStart);
+            string value = text.Substring(0, left.SourceStart) + text.Substring(right.SourceStart, right.SourceLength) + gap + text.Substring(left.SourceStart, left.SourceLength)
+                + text.Substring(right.SourceStart + right.SourceLength);
+            int selectedStart = delta < 0 ? left.SourceStart : left.SourceStart + right.SourceLength + gap.Length;
+            complete.Text = value; List<SendPart> moved = Build(complete);
+            selectedIndex = moved.FindIndex(p => selectedStart >= p.SourceStart && selectedStart < p.SourceStart + p.SourceLength);
+            return value;
         }
         public static string RemoveAttachmentMarker(string text, int oneBasedIndex)
         {

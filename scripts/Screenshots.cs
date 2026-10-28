@@ -94,12 +94,17 @@ namespace QuickReplyLite
                 files.SelectedIndex = 1; body.Select(body.Text.IndexOf("最后查看", StringComparison.Ordinal), 0); FindButton(editor, "插入到光标处").PerformClick();
                 files.SelectedIndex = 2; body.Select(body.TextLength, 0); FindButton(editor, "插入到光标处").PerformClick();
                 Assert(body.Text == expected && sequence.Items.Count == 6 && sequence.Items[1].ToString().Contains("第一张图") && sequence.Items[5].ToString().Contains("详细资料"), "insertion controls produce text-image-text-image-text-file and six matching preview steps");
+                sequence.SelectedIndex = 5; FindButton(editor, "上移").PerformClick();
+                Assert(body.Text == "先看这张图。#图1#再看第二张图。#图2##文件3#最后查看资料。" && sequence.SelectedIndex == 4, "preview up-move edits the actual body and retains selection on the moved file");
+                FindButton(editor, "下移").PerformClick();
+                Assert(body.Text == expected && sequence.SelectedIndex == 5, "preview down-move restores the selected step order without losing any text");
                 ordered.Checked = false;
-                Assert(!PhraseContent.Marker.IsMatch(body.Text) && sequence.Items.Count == 2 && body.Text == "先看这张图。再看第二张图。最后查看资料。", "turning off composition removes position markers while preserving all text and attachments");
+                Assert(!PhraseContent.Marker.IsMatch(body.Text) && sequence.Items.Count == 2 && body.Text == "先看这张图。再看第二张图。最后查看资料。" && !FindButton(editor, "上移").Enabled && !FindButton(editor, "下移").Enabled, "turning off composition removes position markers while preserving all text and attachments");
                 ordered.Checked = true; body.Text = expected; body.Select(0, 0);
                 Assert((bool)InvokeEditor(editor, "SavePhrase"), "the composed phrase saves through the real editor");
                 saved = store.Data.Phrases.Last();
                 Assert(saved.InlineAttachments && saved.Text == expected && DeliveryPlan.Build(saved, DeliveryMode.Send).Count == sequence.Items.Count, "saved delivery plan has exactly the same order and step count as the preview");
+                files.SelectedIndex = 0; files.TopIndex = 0; sequence.SelectedIndex = 3; sequence.TopIndex = 0;
                 Capture(editor, output, "composition");
             }
             using (PhraseEditor editor = new PhraseEditor(store, saved, saved.CategoryId))
