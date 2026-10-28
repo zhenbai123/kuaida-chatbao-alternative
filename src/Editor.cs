@@ -95,7 +95,9 @@ namespace QuickReplyLite
                     try { body.Text = PhraseContent.PlainText(DraftPhrase()); hint.Text = "已取消穿插位置，改为先发整段文字，再发送全部附件。"; }
                     finally { loadingDraft = false; }
                 }
-                inlineMode = ordered.Checked; UpdateSequence();
+                inlineMode = ordered.Checked;
+                if (inlineMode && !loadingDraft) hint.Text = "已启用顺序编排，请在右侧核对每一步。";
+                UpdateSequence();
             };
             orderBar.Controls.Add(ordered, 0, 0);
             bodyLabel.Text = "在文字间插入附件；也可剪切标记调整位置。";
@@ -103,24 +105,23 @@ namespace QuickReplyLite
             body.Multiline = true; body.AcceptsReturn = true; body.ScrollBars = ScrollBars.Vertical; body.MaxLength = 50000; body.Dock = DockStyle.Fill;
             body.AccessibleName = "话术文字，可在光标处插入图片或文件";
             body.TextChanged += delegate { UpdateSequence(); };
-            TableLayoutPanel composition = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
+            TableLayoutPanel composition = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 3, Margin = Padding.Empty };
             composition.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 58)); composition.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42));
-            composition.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); composition.Controls.Add(body, 0, 0);
+            composition.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); composition.RowStyles.Add(new RowStyle(SizeType.Absolute, 36)); composition.RowStyles.Add(new RowStyle(SizeType.Absolute, 132)); composition.Controls.Add(body, 0, 0);
             TableLayoutPanel previewPanel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Margin = new Padding(8, 0, 0, 0) };
             previewPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 24)); previewPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); previewPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 51));
             sequenceTitle.Dock = DockStyle.Fill; sequenceTitle.TextAlign = ContentAlignment.MiddleLeft;
-            sequence.Dock = DockStyle.Fill; sequence.IntegralHeight = false; sequence.DrawMode = DrawMode.OwnerDrawFixed; sequence.ItemHeight = 64;
+            sequence.Dock = DockStyle.Fill; sequence.IntegralHeight = false; sequence.DrawMode = DrawMode.OwnerDrawFixed; sequence.ItemHeight = 50;
             sequence.AccessibleName = "发送顺序预览，从上到下依次发送"; sequence.DrawItem += DrawSequence;
             sequenceNote.Dock = DockStyle.Fill; sequenceNote.ForeColor = Color.DimGray;
             previewPanel.Controls.Add(sequenceTitle, 0, 0); previewPanel.Controls.Add(sequence, 0, 1); previewPanel.Controls.Add(sequenceNote, 0, 2);
-            composition.Controls.Add(previewPanel, 1, 0); layout.Controls.Add(composition, 0, 3);
+            composition.Controls.Add(previewPanel, 1, 0); composition.SetRowSpan(previewPanel, 3); layout.Controls.Add(composition, 0, 3); layout.SetRowSpan(composition, 3);
 
             FlowLayoutPanel fileBar = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Padding = new Padding(0, 3, 0, 0) };
             Button add = new Button { Text = "＋ 图片 / 文件", AutoSize = true, Height = 27 };
             Button remove = new Button { Text = "移除选中", AutoSize = true, Height = 27 };
             Button preview = new Button { Text = "预览图片", AutoSize = true, Height = 27, Enabled = false };
             Button insert = new Button { Text = "插入到光标处", AutoSize = true, Height = 27, Enabled = false };
-            Label fileNote = new Label { Text = "最多9个，支持拖入", AutoSize = true, Margin = new Padding(8, 6, 0, 0), ForeColor = Color.DimGray };
             add.Click += delegate { using (OpenFileDialog dialog = new OpenFileDialog { Multiselect = true, Title = "添加本地图片或文件", CheckFileExists = true, Filter = "所有文件|*.*|图片|*.png;*.jpg;*.jpeg;*.bmp;*.gif" }) if (dialog.ShowDialog(this) == DialogResult.OK) AddFiles(dialog.FileNames); };
             remove.Click += delegate
             {
@@ -135,13 +136,14 @@ namespace QuickReplyLite
             insert.Click += delegate { InsertSelectedAttachment(); };
             compositionTips.SetToolTip(insert, "先在正文点击插入位置，再选择下面的附件。已有该附件标记时移到光标处；需要重复发送时可复制标记。");
             compositionTips.SetToolTip(ordered, "勾选后，箭头发送会按右侧顺序逐条发送。取消会移除正文中的位置标记，改为整段文字和附件。");
-            fileBar.Controls.AddRange(new Control[] { add, insert, remove, preview, fileNote }); layout.Controls.Add(fileBar, 0, 4);
+            compositionTips.SetToolTip(add, "每条最多9个图片或文件，也可拖入下方附件列表。勾选逐条发送后，新附件插入正文光标所在位置。");
+            fileBar.Controls.AddRange(new Control[] { add, insert, remove, preview }); composition.Controls.Add(fileBar, 0, 1);
             files.Dock = DockStyle.Fill; files.IntegralHeight = false; files.AccessibleName = "关联图片和文件，可查看缩略图并双击预览";
             files.DrawMode = DrawMode.OwnerDrawFixed; files.ItemHeight = 64; files.DrawItem += DrawFile;
             files.SelectedIndexChanged += delegate { DraftFile file = files.SelectedItem as DraftFile; preview.Enabled = file != null && ImagePreviewForm.CanPreview(file.Name); insert.Enabled = file != null; };
             files.MouseDoubleClick += delegate(object sender, MouseEventArgs e) { if (files.IndexFromPoint(e.Location) >= 0) PreviewSelectedImage(); };
             files.KeyDown += delegate(object sender, KeyEventArgs e) { if (e.KeyCode == Keys.Enter) { PreviewSelectedImage(); e.SuppressKeyPress = true; } };
-            layout.Controls.Add(files, 0, 5);
+            composition.Controls.Add(files, 0, 2);
             AllowDrop = true; files.AllowDrop = true;
             DragEventHandler over = delegate(object sender, DragEventArgs e) { e.Effect = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None; };
             DragEventHandler drop = delegate(object sender, DragEventArgs e) { string[] dropped = e.Data.GetData(DataFormats.FileDrop) as string[]; if (dropped != null) AddFiles(dropped); };
@@ -167,7 +169,7 @@ namespace QuickReplyLite
                 foreach (Attachment item in phrase.Attachments) files.Items.Add(new DraftFile { Name = item.Name, Existing = item });
             }
             loadingDraft = false; UpdateSequence();
-            Shown += delegate { DialogSizing.FitWorkingArea(this); RenderColors(); files.ItemHeight = sequence.ItemHeight = (int)Math.Round(64 * DeviceDpi / 96.0); if (files.Items.Count > 0) files.SelectedIndex = 0; body.Focus(); };
+            Shown += delegate { DialogSizing.FitWorkingArea(this); RenderColors(); files.ItemHeight = (int)Math.Round(64 * DeviceDpi / 96.0); sequence.ItemHeight = (int)Math.Round(50 * DeviceDpi / 96.0); if (files.Items.Count > 0) files.SelectedIndex = 0; body.Focus(); };
             FormClosed += delegate { ClearFiles(); compositionTips.Dispose(); };
         }
 
@@ -266,7 +268,7 @@ namespace QuickReplyLite
             TextRenderer.DrawText(e.Graphics, (e.Index + 1).ToString("00"), Font, number, selected ? ink : Color.FromArgb(40, 120, 208), TextFormatFlags.NoPrefix);
             Rectangle content = new Rectangle(number.Right, e.Bounds.Top + pad, Math.Max(1, e.Bounds.Right - number.Right - pad), e.Bounds.Height - 2 * pad);
             if (step.AttachmentIndices.Length == 0)
-                TextRenderer.DrawText(e.Graphics, "文字\r\n" + PreviewText.Wrap(step.Text, Math.Max(5, content.Width / Font.Height), 2), Font, content, ink, TextFormatFlags.NoPrefix | TextFormatFlags.WordBreak | TextFormatFlags.EndEllipsis);
+                TextRenderer.DrawText(e.Graphics, "文字\r\n" + PreviewText.Wrap(step.Text, Math.Max(5, content.Width / Font.Height), 1), Font, content, ink, TextFormatFlags.NoPrefix | TextFormatFlags.WordBreak | TextFormatFlags.EndEllipsis);
             else
             {
                 int index = step.AttachmentIndices[0]; DraftFile file = (DraftFile)files.Items[index]; Bitmap image = file.Thumbnail(store);
@@ -363,7 +365,7 @@ namespace QuickReplyLite
                     else { Attachment attachment = store.CopyAttachment(file.Source); copied.Add(attachment); updated.Attachments.Add(attachment); }
                 }
                 if (previousIndex >= 0) store.Data.Phrases[previousIndex] = updated; else store.Data.Phrases.Add(updated);
-                store.Save(); original = updated; return true;
+                store.Save(); original = updated; hint.Text = "已保存，可直接使用。"; return true;
             }
             catch (Exception error)
             {
