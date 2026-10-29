@@ -14,6 +14,16 @@
 
 这是独立开发的聊天宝类工具替代项目，与聊天宝官方无隶属关系；提供的是本项目完整开源代码。
 
+## Excel 导入与缺图处理（v1.8.2）
+
+直接导入聊天宝导出的 `.xls` / `.xlsx` 文字话术，无需安装 Excel 或 WPS。自动识别介绍行之后的表头，保留分类、关键词、正文换行和关键词底色；导入前可选择目标大板块。
+
+表格中有图片或文件引用、但没有提供素材时，先导入文字，只移除缺失附件的 `#图1#` 等位置标记。导入预览可查看缺图详情，导入后在数据目录保存原始正文及缺失引用的提醒报告。仅含缺失附件、没有正文的记录会跳过并记录；CSV 使用相同规则。需要恢复图片时可导入含素材的 `.bangkefu` / `.quickreply`，或在话术编辑器手动添加。
+
+默认勾选「跳过重复」；需要保留表格中的重复话术时可取消勾选。升级请保留整个 `Data/` 文件夹，完整解压软件，并把 `ExcelDataReader.dll` 与 EXE 放在一起。
+
+![缺图时先导入文字，并保留缺失引用提醒](docs/screenshots/import-missing.png)
+
 ## 图片、文字和文件按指定顺序发送（v1.8.0）
 
 1. 新建或修改话术，勾选 **「按正文位置逐条发送」**（新建默认勾选）。
@@ -73,7 +83,7 @@
 | 图片和文件 | 每条话术最多 9 个本地附件，编辑时查看缩略图，双击图片可放大预览 |
 | 排序 | 长按话术约 0.35 秒后拖动到指定位置，也可右键上移、下移 |
 | 批量修改 | 先查找并预览，再精确替换正文中的文字，保留其他文字、关键词、底色及附件 |
-| 导入导出 | `.quickreply` 包含文字与素材；CSV 用于文字表格；支持已验证结构的 `.bangkefu` 导入 |
+| 导入导出 | `.quickreply` 包含文字与素材；Excel / CSV 用于文字表格，缺图时保留文字；支持已验证结构的 `.bangkefu` 导入 |
 | 导入目标 | 可指定导入到某个大板块，追加去重或替换目标板块，导入前自动备份 |
 | 桌面与自启 | 启动时创建桌面快捷方式；「桌面」可重建；勾选「开机启动」后随 Windows 登录运行 |
 
@@ -81,7 +91,7 @@
 
 ## 下载与开始使用
 
-1. 到 [Releases](https://github.com/zhenbai123/kuaida-chatbao-alternative/releases/latest) 下载 `Kuaida-v1.8.0-Windows-x64.zip`。
+1. 到 [Releases](https://github.com/zhenbai123/kuaida-chatbao-alternative/releases/latest) 下载 `Kuaida-v1.8.2-Windows-x64.zip`。
 2. 完整解压到固定且可写的目录，例如 `D:\Apps\Kuaida`，不要在压缩包内直接运行。
 3. 双击 `QuickReplyLite.exe`，无需激活码。系统需要 **.NET Framework 4.8**。
 4. 新建分类和话术，先点击目标聊天输入框，再使用左侧箭头或双击话术。
@@ -106,9 +116,9 @@ Windows 安装 .NET Framework 4.8 开发环境后，双击 `build-windows.cmd`�
 powershell -ExecutionPolicy Bypass -File scripts/build.ps1
 ```
 
-不需要 npm、Electron 或任何密钥。本开源版本没有激活窗口、授权校验和管理员签发模块。
+首次编译需要联网获取固定版本的 ExcelDataReader，构建脚本自动校验 SHA-256；编译后的软件离线运行。不需要 npm、Electron 或任何密钥。本开源版本没有激活窗口、授权校验和管理员签发模块。
 
-核心测试需要 .NET 8 SDK：
+核心测试需要 .NET 8 SDK，首次运行从 NuGet 获取固定版本的解析库：
 
 ```sh
 dotnet run --project tests/CoreTests.csproj --configuration Release
@@ -147,3 +157,13 @@ BANGKEFU-FORMAT.md   .bangkefu 已验证格式及兼容范围
 ## 开源许可
 
 采用 [MIT License](LICENSE.txt)，允许使用、修改和再分发，分发时保留许可证及版权声明。欢迎提交问题和改进。
+
+## v1.8.1 Excel 导入修复
+
+支持本地 `.xls` / `.xlsx` 文字话术导入，可跳过介绍行识别表头，兼容“话术”“背景色”和必填标记，保留正文换行、关键词、RGB底色和两级分类。导入前选择目标板块；含外部附件引用时保留文字继续导入，忽略缺失图片/文件及其占位符，并保存含原文和引用的提醒报告。无需安装 Excel/WPS。
+
+随软件附带 [ExcelDataReader 3.9.0](https://github.com/ExcelDataReader/ExcelDataReader)（MIT），`ExcelDataReader.dll` 必须放在 EXE 旁边，版权许可见 `vendor/ExcelDataReader/LICENSE.txt`。
+
+## v1.8.2 缺图表格仍可导入文字
+
+修复含图片引用的 Excel 被整体拒绝的问题。现在保留全部可用正文、分类、关键词和底色，只移除没有附件的图文占位符。导入预览可查看缺图详情，导入后在数据目录保存原文及引用；仅有缺失附件的行跳过并记录。CSV也采用相同处理。

@@ -48,12 +48,44 @@ namespace QuickReplyLite
                 LibraryTransfer.ExportPackage(store, package, "");
                 using (ImportedLibrary incoming = LibraryTransfer.Load(package))
                 using (ImportLibraryForm import = new ImportLibraryForm(store, incoming, Board.PersonalId)) Capture(import, output, "import");
+                CheckMissingMediaImport(store, temporary, output);
                 CheckComposition(store, temporary, output);
-                Console.WriteLine("Generated five real WinForms window images with demonstration data.");
+                Console.WriteLine("Generated six real WinForms window images with demonstration data.");
                 return 0;
             }
             catch (Exception error) { Console.Error.WriteLine(error); return 1; }
             finally { if (Directory.Exists(temporary)) Directory.Delete(temporary, true); }
+        }
+
+        private static void CheckMissingMediaImport(LocalStore store, string temporary, string output)
+        {
+            string file = Path.Combine(temporary, "missing-media.csv");
+            File.WriteAllText(file, "分类,关键词,话术,图片,背景色\r\n常用,产品介绍,您好，这是产品说明。#图1#有问题随时联系我。,missing-demo.png,3A84FF\r\n常用,欢迎,您好，很高兴为您服务。,,9C27B0\r\n常用,仅图片,#图1#,missing-only.png,FFFFFF\r\n", new System.Text.UTF8Encoding(true));
+            using (ImportedLibrary incoming = LibraryTransfer.Load(file))
+            using (ImportLibraryForm form = new ImportLibraryForm(store, incoming, Board.PersonalId))
+            {
+                form.Show(); Pump();
+                if (Field<ListBox>(form, "list").Items.Count != 2 || incoming.SkippedSourceRows != 1) throw new Exception("Missing-media preview lost usable text rows.");
+                if (!Field<TextBox>(form, "content").Text.Contains("您好，这是产品说明。有问题随时联系我。")) throw new Exception("Missing-media preview text is incorrect.");
+                bool checkedDetails = false;
+                using (System.Windows.Forms.Timer closer = new System.Windows.Forms.Timer { Interval = 250 })
+                {
+                    closer.Tick += delegate
+                    {
+                        Form details = Application.OpenForms.Cast<Form>().FirstOrDefault(f => f.Text == "导入提醒 · 原文与缺失附件");
+                        if (details == null) return;
+                        TextBox report = details.Controls.OfType<TextBox>().Single();
+                        checkedDetails = report.ReadOnly && report.Text.Contains("missing-only.png") && report.Text.Contains("#图1#");
+                        details.Close();
+                    };
+                    closer.Start();
+                    typeof(ImportLibraryForm).GetMethod("ShowWarningDetails", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(form, null);
+                    closer.Stop();
+                }
+                if (!checkedDetails) throw new Exception("Missing-media details did not retain skipped rows and original markers.");
+                Capture(form, output, "import-missing");
+                Console.WriteLine("PASS 3 native missing-media import UI checks.");
+            }
         }
 
         private static T Field<T>(object instance, string name) where T : class

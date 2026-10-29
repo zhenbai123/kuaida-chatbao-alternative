@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       publish_release:
-        description: 'Publish v1.8.0 release after all checks pass'
+        description: 'Publish v1.8.2 release after all checks pass'
         type: boolean
         default: false
       update_screenshots:
@@ -79,21 +79,25 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $notes = @'
-          快答-聊天宝替代开源app v1.8.0
+          快答-聊天宝替代开源app v1.8.2
 
           Windows 10 / 11 64 位本地话术悬浮窗，MIT 开源、免激活、无需账号。完整解压后双击 QuickReplyLite.exe；需要 .NET Framework 4.8。
 
-          新增图文发送顺序编排：在正文光标处添加图片/文件，或选择已有附件点击“插入到光标处”。右侧按编号预览每段文字、图片和文件；选中步骤后可自行上移、下移，正文同步更新，文字也可直接修改。新建话术默认按正文位置逐条发送；保存和话术包导出保留顺序。
+          Excel/CSV 缺失图片不再阻止导入，保留可用文字，原文与缺失引用记录在提醒报告。
+
+          支持 Excel .xls/.xlsx 文字导入，自动识别介绍行之后的表头，保留分类、关键词、正文换行与背景色。无需安装 Excel/WPS。
+
+          支持图文发送顺序编排：在正文光标处添加图片/文件，或选择已有附件点击“插入到光标处”。右侧按编号预览每段文字、图片和文件；选中步骤后可自行上移、下移，正文同步更新，文字也可直接修改。新建话术默认按正文位置逐条发送；保存和话术包导出保留顺序。
 
           勾选主窗口“回车发送”后，点击箭头按预览逐步发送；双击及未勾选回车发送时只粘贴，不分段、不回车。
 
           保留带表头 .bangkefu 导入兼容、原始RGB颜色、固定右侧无缝吸附、箭头一键发送、双击仅粘贴、悬浮置顶、板块分类、关键词底色、图片文件预览、拖动排序、批量替换、话术导入导出、桌面快捷方式与开机启动。
 
-          附件 Kuaida-v1.8.0-Windows-x64.zip 是可直接使用的 Windows 软件；Source code 是源码。升级请保留整个 Data 文件夹。不同聊天软件的发送与附件行为请先在测试会话确认。
+          附件 Kuaida-v1.8.2-Windows-x64.zip 是可直接使用的 Windows 软件；Source code 是源码。升级请保留整个 Data 文件夹。不同聊天软件的发送与附件行为请先在测试会话确认。
           '@
           $notes | Set-Content artifacts/release-notes.md -Encoding utf8
-          gh release view v1.8.0 --repo $env:GITHUB_REPOSITORY *> $null
-          if ($LASTEXITCODE -eq 0) { throw 'Release v1.8.0 already exists; refusing to replace a published release.' }
+          gh release view v1.8.2 --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) { throw 'Release v1.8.2 already exists; refusing to replace a published release.' }
           $target = git rev-parse HEAD
-          gh release create v1.8.0 artifacts/Kuaida-v1.8.0-Windows-x64.zip artifacts/SHA256SUMS.txt --repo $env:GITHUB_REPOSITORY --target $target --title '快答-聊天宝替代开源app v1.8.0' --notes-file artifacts/release-notes.md --latest
+          gh release create v1.8.2 artifacts/Kuaida-v1.8.2-Windows-x64.zip artifacts/SHA256SUMS.txt --repo $env:GITHUB_REPOSITORY --target $target --title '快答-聊天宝替代开源app v1.8.2' --notes-file artifacts/release-notes.md --latest
           if ($LASTEXITCODE -ne 0) { throw 'Release creation failed.' }

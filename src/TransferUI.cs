@@ -36,7 +36,7 @@ namespace QuickReplyLite
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48)); Controls.Add(layout);
             TableLayoutPanel header = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 3, Margin = Padding.Empty };
             header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110)); header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); header.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); header.RowStyles.Add(new RowStyle(SizeType.Absolute, 34)); header.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            Label summary = new Label { Text = "文件包含 " + incoming.Library.Categories.Count + " 个分类、" + incoming.Library.Phrases.Count + " 条话术、" + incoming.FileCount + " 个附件。", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft };
+            Label summary = new Label { Text = "可导入 " + incoming.Library.Categories.Count + " 个分类、" + incoming.Library.Phrases.Count + " 条话术、" + incoming.FileCount + " 个附件。" + (incoming.SkippedSourceRows == 0 ? "" : "另跳过 " + incoming.SkippedSourceRows + " 行无正文记录。"), Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft };
             header.Controls.Add(summary, 0, 0); header.SetColumnSpan(summary, 2);
             List<Board> choices = store.Data.Boards.ToList();
             if (incoming.HasBoardLayout) choices.Add(new Board { Id = "", Name = "按文件原有大板块导入" });
@@ -65,9 +65,9 @@ namespace QuickReplyLite
             {
                 TableLayoutPanel warningPanel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1 };
                 warningPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); warningPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100)); warningPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-                warningPanel.Controls.Add(new Label { Text = incoming.Warnings.Count + " 条话术有失效图片/文件标记。现有文字和附件已保留，失效标记将移除。导入后会保存含原文的提醒报告。", Dock = DockStyle.Fill, ForeColor = Color.DarkRed, TextAlign = ContentAlignment.MiddleLeft }, 0, 0);
+                warningPanel.Controls.Add(new Label { Text = "有 " + incoming.Warnings.Count + " 条附件提醒：可用文字继续导入，缺失图片/文件及其标记忽略；仅含缺失附件的记录跳过。导入后保存含原文的提醒报告。", Dock = DockStyle.Fill, ForeColor = Color.DarkRed, TextAlign = ContentAlignment.MiddleLeft }, 0, 0);
                 Button details = new Button { Text = "查看缺图详情", Dock = DockStyle.Fill, Margin = new Padding(3, 12, 0, 12) };
-                details.Click += delegate { list.SelectedIndex = incoming.Library.Phrases.FindIndex(p => p.Id == incoming.Warnings[0].PhraseId); };
+                details.Click += delegate { ShowWarningDetails(); };
                 warningPanel.Controls.Add(details, 1, 0); layout.Controls.Add(warningPanel, 0, 5);
             }
             TableLayoutPanel footer = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, Padding = new Padding(0, 8, 0, 0) };
@@ -94,6 +94,20 @@ namespace QuickReplyLite
                 targetBoard.SelectedValue = store.Data.Boards.Any(b => b.Id == selectedBoard) ? selectedBoard : Board.PersonalId;
                 RefreshDestination(); DialogSizing.FitWorkingArea(this); if (list.Items.Count > 0) list.SelectedIndex = 0;
             };
+        }
+
+        private void ShowWarningDetails()
+        {
+            using (Form details = new Form { Text = "导入提醒 · 原文与缺失附件", Font = Font, Icon = Program.ApplicationIcon,
+                Size = new Size(700, 550), MinimumSize = new Size(480, 360), StartPosition = FormStartPosition.CenterParent, MinimizeBox = false })
+            {
+                TextBox report = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill,
+                    BackColor = Color.White, Text = incoming.WarningReport(), AccessibleName = "导入提醒详情" };
+                Button close = new Button { Text = "关闭", Dock = DockStyle.Bottom, Height = 38, DialogResult = DialogResult.Cancel };
+                details.Controls.Add(report); details.Controls.Add(close); details.CancelButton = close;
+                details.Shown += delegate { DialogSizing.FitWorkingArea(details); report.Select(0, 0); };
+                details.ShowDialog(this);
+            }
         }
 
         private void RefreshDestination()

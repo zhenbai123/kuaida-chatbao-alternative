@@ -11,6 +11,7 @@ internal static class Tests
     private static void Reject(Action action, string name) { bool rejected = false; try { action(); } catch { rejected = true; } Check(rejected, name); }
     private static void Main(string[] args)
     {
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
         string root = Path.Combine(Path.GetTempPath(), "quick-reply-lite-" + Guid.NewGuid().ToString("N"));
         try
         {
@@ -52,6 +53,7 @@ internal static class Tests
             fileOnly.Attachments.Add(attachment); recovered.Data.Phrases.Add(fileOnly); recovered.Save();
             Check(LocalStore.Preview(fileOnly) == "产品说明.txt", "attachment-only phrases are supported");
             CheckEditingFeatures(Path.Combine(root, "editing"));
+            ExcelTests.Run(Path.Combine(root, "excel"), Check);
             TransferTests.Run(Path.Combine(root, "transfer"), Check);
             BangkefuTests.Run(Path.Combine(root, "bangkefu"), Check);
             InteractionTests.Run(Path.Combine(root, "interaction"), Check);

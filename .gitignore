@@ -10,3 +10,5 @@ owner-licensing/
 *.license
 *.user
 .DS_Store
+
+vendor/ExcelDataReader/**/*.dll

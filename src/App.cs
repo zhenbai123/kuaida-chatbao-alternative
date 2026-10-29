@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -12,8 +12,8 @@ using System.Windows.Forms;
 
 [assembly: System.Reflection.AssemblyTitle("快答·开源版（免激活）")]
 [assembly: System.Reflection.AssemblyDescription("本地话术与图片文件一键发送悬浮窗")]
-[assembly: System.Reflection.AssemblyVersion("1.8.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.8.0.0")]
+[assembly: System.Reflection.AssemblyVersion("1.8.2.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.8.2.0")]
 
 namespace QuickReplyLite
 {
@@ -238,7 +238,7 @@ namespace QuickReplyLite
                 menu.Items.Add("导出全部文字表格（CSV，不含附件）", null, async delegate { await ExportLibrary("", true); });
                 menu.Closed += delegate { if (!IsDisposed) BeginInvoke(new Action(menu.Dispose)); else menu.Dispose(); }; menu.Show(export, new Point(0, export.Height));
             };
-            tooltip.SetToolTip(import, "导入快答、聊天宝话术包或UTF-8 CSV，可追加或替换"); tooltip.SetToolTip(export, "将话术连同图片和文件一起打包分享");
+            tooltip.SetToolTip(import, "导入快答、聊天宝话术包、Excel或UTF-8 CSV，可追加或替换"); tooltip.SetToolTip(export, "将话术连同图片和文件一起打包分享");
             Button desktopShortcut = new Button { Text = "桌面", Dock = DockStyle.Right, Width = 45, FlatStyle = FlatStyle.Flat, ForeColor = blue };
             desktopShortcut.FlatAppearance.BorderSize = 0;
             tooltip.SetToolTip(desktopShortcut, "在桌面创建快答快捷方式。请先完整解压到固定目录，快捷方式指向这份程序。");
@@ -716,7 +716,7 @@ namespace QuickReplyLite
         {
             if (sending || transferring) return;
             StopDragHold(); string path;
-            using (OpenFileDialog dialog = new OpenFileDialog { Title = "导入话术", CheckFileExists = true, Filter = "话术包（快答 / 聊天宝）|*.quickreply;*.bangkefu;*.zip|聊天宝个人知识库|*.bangkefu|UTF-8 CSV文字表格|*.csv|所有文件|*.*" })
+            using (OpenFileDialog dialog = new OpenFileDialog { Title = "导入话术", CheckFileExists = true, Filter = "支持的导入文件|*.quickreply;*.bangkefu;*.zip;*.xls;*.xlsx;*.csv|Excel文字表格|*.xls;*.xlsx|话术包（快答 / 聊天宝）|*.quickreply;*.bangkefu;*.zip|聊天宝个人知识库|*.bangkefu|UTF-8 CSV文字表格|*.csv|所有文件|*.*" })
             { if (dialog.ShowDialog(this) != DialogResult.OK) return; path = dialog.FileName; }
             ImportedLibrary incoming = null;
             try
@@ -738,7 +738,7 @@ namespace QuickReplyLite
                         activeCategory = ""; search.Clear(); RenderBoards(); RenderCategories(); RenderPhrases(null);
                         status.Text = "已导入 " + preview.Result.Added + " 条，跳过重复 " + preview.Result.Skipped + " 条。";
                         tooltip.SetToolTip(status, status.Text + (preview.Result.BackupPath == null ? "" : "\n导入前备份：" + preview.Result.BackupPath) + (preview.Result.ReportPath == null ? "" : "\n缺图提醒报告：" + preview.Result.ReportPath));
-                        if (preview.Result.ReportPath != null) MessageBox.Show(this, "已导入可用话术和附件。原文件有 " + incoming.Warnings.Count + " 条话术的部分图片标记没有对应附件，请核对并补充缺失内容。\r\n\r\n含原始正文的提醒报告已保存：\r\n" + preview.Result.ReportPath + "\r\n\r\n点击右下角「数据」可打开报告所在文件夹。", "导入完成 · 有缺图提醒", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        if (preview.Result.ReportPath != null) MessageBox.Show(this, "已导入可用话术和附件。发现 " + incoming.Warnings.Count + " 条附件提醒，无法恢复的引用和标记已忽略。" + (incoming.SkippedSourceRows == 0 ? "" : "另跳过 " + incoming.SkippedSourceRows + " 行没有可用正文的记录。") + "\r\n\r\n含原始正文及缺失引用的提醒报告已保存：\r\n" + preview.Result.ReportPath + "\r\n\r\n点击右下角「数据」可打开报告所在文件夹。", "导入完成 · 有缺图提醒", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     }
                     else RenderPhrases(null);
                 }

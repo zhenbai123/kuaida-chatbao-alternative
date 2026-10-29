@@ -32,6 +32,8 @@ namespace QuickReplyLite
         public string PhraseId { get; internal set; }
         public string Description { get; internal set; }
         public string OriginalText { get; internal set; }
+        public string Keyword { get; internal set; }
+        public string OriginalReferences { get; internal set; }
     }
 
     public sealed class ImportedLibrary : IDisposable
@@ -40,19 +42,21 @@ namespace QuickReplyLite
         public int FileCount { get { return Sources.Count; } }
         public bool HasBoardLayout { get; internal set; }
         public readonly List<ImportWarning> Warnings = new List<ImportWarning>();
+        public int SkippedSourceRows { get { return Warnings.Count(w => String.IsNullOrEmpty(w.PhraseId)); } }
         internal readonly Dictionary<string, string> Sources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         internal readonly Dictionary<string, string> Hashes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         internal string TemporaryFolder;
         public string WarningReport()
         {
-            StringBuilder text = new StringBuilder("快答 · 导入提醒\r\n\r\n原文件未修改。以下话术的部分图片/文件位置标记没有对应附件。\r\n导入时仅移除这些失效标记，保留其余文字、图片位置和现有附件。\r\n缺失内容无法从该文件恢复，请核对后补充。\r\n");
+            StringBuilder text = new StringBuilder("快答 · 导入提醒\r\n\r\n原文件未修改。以下记录有无法恢复的图片/文件引用或位置标记。\r\n可用文字和已有附件继续导入，仅移除没有对应附件的位置标记。\r\n仅含缺失附件、没有可用正文的记录会跳过。原始正文及引用保留在本报告中，请核对后补充。\r\n");
             foreach (ImportWarning warning in Warnings)
             {
-                Phrase phrase = Library.Phrases.First(p => p.Id == warning.PhraseId);
-                text.Append("\r\n────────────────────\r\n").Append(warning.Description).Append("\r\n关键词：").Append(phrase.Keyword)
-                    .Append("\r\n原始正文（含失效标记）：\r\n").Append(warning.OriginalText)
-                    .Append("\r\n\r\n待导入正文：\r\n").Append(phrase.Text)
-                    .Append("\r\n\r\n现有附件：\r\n").Append(String.Join("\r\n", phrase.Attachments.Select((a, i) => (i + 1) + ". " + a.Name))).Append("\r\n");
+                Phrase phrase = Library.Phrases.FirstOrDefault(p => p.Id == warning.PhraseId);
+                text.Append("\r\n────────────────────\r\n").Append(warning.Description).Append("\r\n关键词：").Append(phrase == null ? warning.Keyword : phrase.Keyword)
+                    .Append("\r\n原始正文（供核对）：\r\n").Append(warning.OriginalText)
+                    .Append("\r\n\r\n待导入正文：\r\n").Append(phrase == null ? "（没有可用正文，此行已跳过）" : phrase.Text)
+                    .Append("\r\n\r\n现有附件：\r\n").Append(phrase == null ? "无" : String.Join("\r\n", phrase.Attachments.Select((a, i) => (i + 1) + ". " + a.Name))).Append("\r\n");
+                if (!String.IsNullOrEmpty(warning.OriginalReferences)) text.Append("\r\n原始图片/文件引用（未导入）：\r\n").Append(warning.OriginalReferences).Append("\r\n");
             }
             return text.ToString();
         }
@@ -178,6 +182,7 @@ namespace QuickReplyLite
 
         public static ImportedLibrary Load(string path)
         {
+            if (new[] { ".xls", ".xlsx" }.Contains(Path.GetExtension(path).ToLowerInvariant())) return ExcelLibraryReader.Load(path);
             if (String.Equals(Path.GetExtension(path), ".csv", StringComparison.OrdinalIgnoreCase)) return LoadCsv(path);
             if (String.Equals(Path.GetExtension(path), ".bangkefu", StringComparison.OrdinalIgnoreCase)) return BangkefuReader.Load(path);
             using (FileStream probe = File.OpenRead(path))
@@ -185,7 +190,7 @@ namespace QuickReplyLite
                 if (probe.Length > MaxTotal + MaxJson) throw new InvalidDataException("导入文件超过允许大小。");
                 if (probe.ReadByte() != 'P' || probe.ReadByte() != 'K')
                 {
-                    throw new InvalidDataException("无法识别文件。请选择快答话术包（.quickreply）或 UTF-8 CSV 表格。");
+                    throw new InvalidDataException("无法识别文件。请选择快答话术包（.quickreply）、Excel（.xls/.xlsx）或 UTF-8 CSV 表格。");
                 }
             }
             ImportedLibrary result = new ImportedLibrary();
@@ -385,18 +390,49 @@ namespace QuickReplyLite
             try { using (StreamReader reader = new StreamReader(path, new UTF8Encoding(false, true), true)) text = reader.ReadToEnd(); }
             catch (DecoderFallbackException) { throw new InvalidDataException("请将表格另存为 UTF-8 CSV 后再导入。"); }
             List<List<string>> rows = ParseCsv(text); if (rows.Count == 0) throw new InvalidDataException("CSV没有内容。");
-            List<string> headers = rows[0].Select(h => h.Trim().TrimStart('\uFEFF')).ToList();
+            ImportedLibrary result = new ImportedLibrary { Library = new Document() };
+            AppendTable(result, rows, "CSV");
+            if (result.Library.Phrases.Count == 0) throw new InvalidDataException("CSV中没有可导入的非空话术正文。");
+            LocalStore.Validate(result.Library); return result;
+        }
+
+        private static string Header(string value)
+        { return (value ?? "").Trim().TrimStart('\uFEFF').Replace("（必填）", "").Replace("(必填)", "").Trim(); }
+        internal static bool IsTableHeader(List<string> row)
+        { return row.Select(Header).Any(h => new[] { "话术", "话术内容", "快捷回复内容", "回复内容", "内容", "正文" }.Contains(h)); }
+
+        internal static void AppendTable(ImportedLibrary result, List<List<string>> rows, string source, List<int> sourceRows = null)
+        {
+            List<string> headers = rows[0].Select(Header).ToList();
             Func<string[], int> column = names => headers.FindIndex(h => names.Contains(h));
-            int body = column(new[] { "话术内容", "快捷回复内容", "回复内容", "内容", "正文" });
-            int keyword = column(new[] { "关键词", "关键字", "回复问题", "问题" }); int color = column(new[] { "关键词底色", "底色" });
+            int body = column(new[] { "话术", "话术内容", "快捷回复内容", "回复内容", "内容", "正文" });
+            int keyword = column(new[] { "关键词", "关键字", "回复问题", "问题" }); int color = column(new[] { "关键词底色", "背景色", "底色" });
             int category = column(new[] { "分类", "一级分类", "分类名称" }); int second = column(new[] { "二级分类" });
             int boardColumn = column(new[] { "板块", "板块名称" });
-            if (body < 0) throw new InvalidDataException("CSV需包含“话术内容”或“快捷回复内容”列，可另含分类、关键词和关键词底色列。");
-            ImportedLibrary result = new ImportedLibrary { Library = new Document(), HasBoardLayout = boardColumn >= 0 };
-            foreach (List<string> row in rows.Skip(1))
+            List<int> assetColumns = headers.Select((h, i) => new { Header = h, Index = i }).Where(c => new[] { "图片", "附件", "文件" }.Contains(c.Header)).Select(c => c.Index).ToList();
+            if (body < 0) throw new InvalidDataException(source + "需包含“话术”或“话术内容”列。");
+            result.HasBoardLayout |= boardColumn >= 0;
+            for (int rowIndex = 1; rowIndex < rows.Count; rowIndex++)
             {
+                List<string> row = rows[rowIndex];
                 Func<int, string> cell = index => index < 0 || index >= row.Count ? "" : row[index];
-                if (String.IsNullOrWhiteSpace(cell(body))) continue;
+                string original = cell(body), bodyText = PhraseContent.Marker.Replace(original, "");
+                string references = String.Join("\r\n", assetColumns.Where(i => !String.IsNullOrWhiteSpace(cell(i))).Select(i => headers[i] + "：" + cell(i)));
+                ImportWarning warning = null;
+                if (references.Length > 0 || bodyText != original)
+                {
+                    warning = new ImportWarning { OriginalText = original, OriginalReferences = references, Keyword = cell(keyword),
+                        Description = source + "第 " + (sourceRows == null ? rowIndex + 1 : sourceRows[rowIndex]) + " 行：表格未提供可恢复的图片/文件；已忽略附件引用和位置标记，保留其余文字。" };
+                    result.Warnings.Add(warning);
+                }
+                if (String.IsNullOrWhiteSpace(bodyText))
+                {
+                    if (warning != null) warning.Description += "此行没有可用正文，已跳过。";
+                    continue;
+                }
+                string colorValue = cell(color).Trim().TrimStart('#');
+                if (colorValue.Length > 0 && !System.Text.RegularExpressions.Regex.IsMatch(colorValue, @"^[0-9a-fA-F]{6}$")) throw new InvalidDataException(source + "存在无效的背景色，需要6位十六进制颜色值。");
+                if (result.Library.Phrases.Count >= 10000) throw new InvalidDataException("最多导入10000条话术。");
                 string name = cell(category).Trim(); if (name.Length == 0) name = "导入的话术";
                 if (cell(second).Trim().Length > 0) name += " / " + cell(second).Trim();
                 string boardName = cell(boardColumn).Trim(); if (boardName.Length == 0) boardName = "个人";
@@ -404,10 +440,10 @@ namespace QuickReplyLite
                 if (board == null) { board = new Board { Id = Guid.NewGuid().ToString("N"), Name = boardName }; result.Library.Boards.Add(board); }
                 Category group = result.Library.Categories.FirstOrDefault(c => c.BoardId == board.Id && String.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
                 if (group == null) { group = new Category { Id = Guid.NewGuid().ToString("N"), Name = name, BoardId = board.Id }; result.Library.Categories.Add(group); }
-                result.Library.Phrases.Add(new Phrase { Id = Guid.NewGuid().ToString("N"), CategoryId = group.Id, Text = cell(body), Keyword = cell(keyword), ColorHex = cell(color) });
+                Phrase phrase = new Phrase { Id = Guid.NewGuid().ToString("N"), CategoryId = group.Id, Text = bodyText, Keyword = cell(keyword), ColorHex = colorValue.Length == 0 ? "" : "#" + colorValue.ToUpperInvariant() };
+                result.Library.Phrases.Add(phrase);
+                if (warning != null) warning.PhraseId = phrase.Id;
             }
-            if (result.Library.Phrases.Count == 0) throw new InvalidDataException("CSV中没有可导入的非空话术正文。");
-            LocalStore.Validate(result.Library); return result;
         }
     }
 }
