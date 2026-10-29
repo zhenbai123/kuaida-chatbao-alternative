@@ -1,0 +1,57 @@
+name: Windows 7 portable compatibility checks
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  win7:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+      - name: Restore pinned CLR2 build dependencies
+        shell: pwsh
+        run: ./compat/win7/restore.ps1
+      - name: Compile application and verification helpers against .NET 3.5
+        shell: pwsh
+        run: |
+          python compat/win7/build.py --compiler "$env:WINDIR/Microsoft.NET/Framework64/v4.0.30319/csc.exe" --refs tools/win7-deps/net35/build/.NETFramework/v3.5 --excel tools/win7-deps/excel360/lib/net20/ExcelDataReader.dll --zip tools/win7-deps/sharpziplib086/lib/20/ICSharpCode.SharpZipLib.dll --verify-build
+          if ($LASTEXITCODE -ne 0) { throw 'CLR2 compilation failed.' }
+      - name: Audit production assembly compatibility
+        shell: pwsh
+        run: |
+          dotnet run --project compat/win7/Audit.csproj -- release/win7
+          if ($LASTEXITCODE -ne 0) { throw 'Binary compatibility audit failed.' }
+      - name: Core and native UI checks in x64 and x86 processes
+        shell: pwsh
+        run: |
+          $hasClr2 = Test-Path "$env:WINDIR/Microsoft.NET/Framework/v2.0.50727/mscorwks.dll"
+          $configuration = if ($hasClr2) { Get-Content release/win7/QuickReplyLite.exe.config -Raw } else { '<?xml version="1.0"?><configuration><startup><supportedRuntime version="v4.0" sku=".NETFramework,Version=v4.8" /></startup></configuration>' }
+          Write-Host "Hosted runner CLR2 available: $hasClr2. Production configuration stays CLR2-only."
+          foreach ($name in @('Win7CoreChecks','Win7CoreChecks-x86','WindowDockingSmoke','WindowDockingSmoke-x86','Screenshots')) {
+            $configuration | Set-Content "release/win7/$name.exe.config" -Encoding utf8
+          }
+          & ./release/win7/Win7CoreChecks.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Legacy core checks failed.' }
+          & ./release/win7/Win7CoreChecks-x86.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Legacy x86 core checks failed.' }
+          & ./release/win7/WindowDockingSmoke.exe "$pwd/artifacts/win7/screenshots-x64"
+          if ($LASTEXITCODE -ne 0) { throw 'Legacy docking checks failed.' }
+          & ./release/win7/WindowDockingSmoke-x86.exe "$pwd/artifacts/win7/screenshots-x86"
+          if ($LASTEXITCODE -ne 0) { throw 'Legacy x86 docking checks failed.' }
+          & ./release/win7/Screenshots.exe "$pwd/artifacts/win7/screenshots-x64"
+          if ($LASTEXITCODE -ne 0) { throw 'Legacy UI checks failed.' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kuaida-win7-verified-build
+          path: |
+            release/win7/QuickReplyLite.exe
+            release/win7/QuickReplyLite.exe.config
+            release/win7/ExcelDataReader.dll
+            release/win7/ICSharpCode.SharpZipLib.dll
+            artifacts/win7/*.json
+            artifacts/win7/**/*.png
+          if-no-files-found: error

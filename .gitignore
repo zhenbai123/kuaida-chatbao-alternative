@@ -12,3 +12,6 @@ owner-licensing/
 .DS_Store
 
 vendor/ExcelDataReader/**/*.dll
+
+compat/win7/bin/
+compat/win7/obj/
